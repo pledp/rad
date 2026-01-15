@@ -1,8 +1,8 @@
 use std::path::Path;
 
 use tokio::{
-    io::{AsyncReadExt, AsyncWriteExt}, 
-    net::{TcpStream}
+    io::{AsyncReadExt, AsyncWriteExt},
+    net::TcpStream,
 };
 
 use rad_common::open_file;
@@ -16,7 +16,7 @@ async fn main() -> Result<()> {
 
     let mut stream = TcpStream::connect("127.0.0.1:42069").await?;
     println!("Connected to server");
-    
+
     stream.write_all(b"Hello from client!\n").await?;
 
     // Read response
