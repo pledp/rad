@@ -1,4 +1,5 @@
-mod vr;
+pub mod pdu;
+pub mod vr;
 
 use std::collections::HashMap;
 use std::fs::File;
@@ -121,8 +122,6 @@ pub fn open_file<P: AsRef<Path>>(path: P) -> Result<DicomFile> {
         let element = read_data_element(&mut file)?;
         offset += element.length;
 
-        println!("{}", element.data_element.as_string().unwrap());
-
         let element2 = element.clone();
 
         metadata.insert_with_result(element);
@@ -132,7 +131,6 @@ pub fn open_file<P: AsRef<Path>>(path: P) -> Result<DicomFile> {
             .unwrap()
             .as_string()
             .unwrap();
-        println!("{}", data);
     }
 
     Ok(DicomFile {
