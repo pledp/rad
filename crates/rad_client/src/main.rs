@@ -8,6 +8,7 @@ use tokio::{
 
 use rad_common::open_file;
 use rad_common::pdu::DicomPdu;
+use rad_common::associate::AAssociateRqAc;
 use rad_common::pdu::read_dicom_pdu;
 
 pub type Result<T> = std::result::Result<T, Error>;

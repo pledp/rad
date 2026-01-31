@@ -2,7 +2,7 @@ use std::convert::TryFrom;
 use std::io::Read;
 use std::string::String;
 
-use crate::associate::AAssociateRq;
+use crate::associate::AAssociateRqAc;
 use crate::Result;
 
 const APPLICATION_CONTEXT_NAME: &'static str = "1.2.840.10008.3.1.1.1";
@@ -36,11 +36,13 @@ impl TryFrom<u8> for PduType {
 }
 
 pub enum DicomPdu {
-    AssociateRqAc(AAssociateRq),
-    Data(AAssociateRq),
+    AssociateRqAc(AAssociateRqAc),
+    Data(AAssociateRqAc),
 }
 
 pub fn read_dicom_pdu<R: Read>(mut reader: R) -> Result<DicomPdu> {
+    todo!();
+    /*
     let mut type_buf = [0u8; 1];
     reader.read_exact(&mut type_buf);
 
@@ -52,7 +54,8 @@ pub fn read_dicom_pdu<R: Read>(mut reader: R) -> Result<DicomPdu> {
         length: 2,
         called_ae: "test".into(),
         calling_ae: "test".into(),
-    }))
+
+    */
 }
 
 pub(crate) fn vec8_add_padding(pdu: &mut Vec<u8>, n: u32) {
