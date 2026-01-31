@@ -1,4 +1,5 @@
 pub mod pdu;
+pub mod associate;
 pub mod vr;
 
 use std::collections::HashMap;
