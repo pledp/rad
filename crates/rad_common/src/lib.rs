@@ -152,7 +152,7 @@ struct DataElementResult {
 /// Data element with tag (0002, 0010) defines the Transfer Syntax for the data set.
 ///
 /// See [DICOM standard part 10 subsection 7.1.](https://dicom.nema.org/medical/dicom/current/output/html/part10.html#sect_7.2)
-fn read_data_element(file: &mut BufReader<File>) -> Result<DataElementResult> {
+fn read_data_element<T: Read>(file: &mut T) -> Result<DataElementResult> {
     let mut group_tag = [0u8; TAG_HALF_LENGTH];
     let mut element_tag = [0u8; TAG_HALF_LENGTH];
     file.read_exact(&mut group_tag)?;

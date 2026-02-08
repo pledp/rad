@@ -2,7 +2,7 @@ use std::convert::TryFrom;
 use std::io::Read;
 use std::string::String;
 
-use crate::pdu::{ DicomPdu, PduType, vec8_add_padding };
+use crate::pdu::{ PduType, vec8_add_padding, SerializableItem };
 use crate::Result;
 
 /// Events related to A-ASSOCIATE. Events lead to actions defined by the DICOM standard.
@@ -22,7 +22,7 @@ enum AssociationEvent {
     AssociationReject,
 }
 
-pub struct AAssociateRqAc {
+pub struct AssociateRequestAcceptPdu {
     pub pdu_type: PduType,
     pub length: u32,
     pub protocol_version: u16,
@@ -30,12 +30,12 @@ pub struct AAssociateRqAc {
     pub calling_ae: String,
     pub application_context_item: ApplicationContextItem,
     pub presentation_context_items: Vec<PresentationContextItem>,
-    //pub user_info: UserInfoItem,
+    pub user_info_item: UserInfoItem,
 }
 
 // TODO: Add builder; several presentation context items
-impl AAssociateRqAc {
-    fn new_rq(pdu_type: PduType, called_ae: &str, calling_ae: &str) -> Self {
+impl AssociateRequestAcceptPdu {
+    pub fn new_rq(called_ae: &str, calling_ae: &str) -> Self {
         // 68 is the length of the A-ASSOCIATE-RQ/AC PDU minus the variable fields
         const NO_VARIABLE_FIELDS_LENGTH: u32 = 68;
         let mut length = NO_VARIABLE_FIELDS_LENGTH;
@@ -49,18 +49,28 @@ impl AAssociateRqAc {
 
         presentation_context_items.push(PresentationContextItem::new_rq(
             1,
-            "1.2.840.10008.5.1.4.1.1.1.1",
+            "1.2.840.10008.1.1",
             uids,
         ));
 
+        length += presentation_context_items
+            .iter()
+            .map(|item| item.item_length())
+            .sum::<u32>();
+
+        let user_info_item = UserInfoItem::new();
+
+        length += user_info_item.item_length();
+
         Self {
-            pdu_type,
+            pdu_type: PduType::AssociateRequest,
             length,
             protocol_version: 1,
             called_ae: called_ae.into(),
             calling_ae: calling_ae.into(),
             application_context_item,
             presentation_context_items,
+            user_info_item,
         }
     }
 }
@@ -84,11 +94,9 @@ impl ApplicationContextItem {
     }
 
     pub fn item_length(&self) -> u32 {
-        // item_type and length
-        let mut length = std::mem::size_of::<u8>() + std::mem::size_of::<u16>();
-        length += std::mem::size_of_val(&self.context_name);
+        const APPLICATION_ITEM_DEFAULT_LENGTH: u32 = 4;
 
-        length as u32
+        APPLICATION_ITEM_DEFAULT_LENGTH + self.length as u32
     }
 }
 
@@ -131,7 +139,7 @@ struct PresentationContextItem {
 
 impl PresentationContextItem {
     fn new_rq(context_id: u8, abstract_syntax: &str, transfer_syntax: Vec<&str>) -> Self {
-        // Presentation context item length without variable fields is 4
+        // Presentation context length without variable fields is 4
         const NO_VARIABLE_FIELDS_LENGTH: u16 = 4;
         let mut length = NO_VARIABLE_FIELDS_LENGTH;
 
@@ -140,7 +148,7 @@ impl PresentationContextItem {
             abstract_syntax
         );
 
-        length += abstract_syntax_item.item_length();
+        length += abstract_syntax_item.item_length() as u16;
 
         let mut transfer_syntax_items: Vec<SyntaxItem> = Vec::new();
         for item in transfer_syntax {
@@ -149,7 +157,7 @@ impl PresentationContextItem {
                 item,
             );
 
-            length += syntax_item.item_length();
+            length += syntax_item.item_length() as u16;
 
             transfer_syntax_items.push(syntax_item);
         }
@@ -167,6 +175,12 @@ impl PresentationContextItem {
 
     fn new_ac(result: AssociateResult) -> Self {
         todo!();
+    }
+
+    pub fn item_length(&self ) -> u32 {
+        // Length field does not include first 4 bytes of item
+        const PRESENTATION_ITEM_INCLUSIVE_LENGTH: u16 = 4;
+        (PRESENTATION_ITEM_INCLUSIVE_LENGTH + self.length) as u32
     }
 }
 
@@ -250,16 +264,115 @@ impl SyntaxItem {
         }
     }
 
-    pub fn item_length(&self) -> u16 {
-        // item_type and length
-        let mut length = std::mem::size_of::<u8>() + std::mem::size_of::<u16>();
-        length += std::mem::size_of_val(&self.syntax);
+    pub fn item_length(&self) -> u32 {
+        const SYNTAX_ITEM_DEFAULT_LENGTH: u32 = 4;
+        println!("LENGTH: {}", SYNTAX_ITEM_DEFAULT_LENGTH + self.length as u32);
 
-        length as u16
+        SYNTAX_ITEM_DEFAULT_LENGTH + self.length as u32
     }
 }
 
-pub fn read_associate_rq_ac<R: Read>(mut reader: R) -> Result<AAssociateRqAc> {
+struct UserInfoItem {
+    pub item_type: u8,
+    pub length: u16,
+    pub sub_items: Vec<SubItem>,
+}
+
+impl UserInfoItem {
+    pub fn new() -> Self {
+        let mut length = 0;
+
+        let mut sub_items: Vec<SubItem> = Vec::new();
+
+        // Mandatory Maximum Length Sub-Item
+        sub_items.push(
+            SubItem::new(
+                0x51,
+                SubItemType::U32(16384)
+            )
+        );
+
+        length += sub_items
+            .iter()
+            .map(|item| item.item_length())
+            .sum::<u32>();
+
+        Self {
+            item_type: 0x50,
+            length: length as u16,
+            sub_items,
+        }
+    }
+
+    pub fn item_length(&self) -> u32 {
+        const USER_ITEM_DEFAULT_LENGTH: u32 = 4;
+        USER_ITEM_DEFAULT_LENGTH + self.length as u32
+    }
+}
+
+impl SerializableItem for UserInfoItem {
+    fn serialize(&self) -> Result<Vec<u8>> {
+        let mut pdu: Vec<u8> = Vec::new();
+
+        pdu.push(self.item_type);
+        vec8_add_padding(&mut pdu, 1);
+
+        pdu.extend_from_slice(&self.length.to_be_bytes());
+
+        for item in self.sub_items.iter() {
+            pdu.extend(item.serialize()?);
+        }
+
+        Ok(pdu)
+    }
+}
+
+enum SubItemType {
+    U32(u32),
+    String(String),
+}
+
+struct SubItem {
+    pub item_type: u8,
+    pub length: u16,
+    pub data: SubItemType,
+}
+
+impl SubItem {
+    pub fn new(item_type: u8, data: SubItemType) -> Self {
+        Self {
+            item_type,
+            length: match &data {
+                SubItemType::String(text) => text.len() as u16,
+                SubItemType::U32(_) => 4,
+            },
+            data
+        }
+    }
+
+    pub fn item_length(&self) -> u32 {
+        const USER_ITEM_DEFAULT_LENGTH: u32 = 4;
+        USER_ITEM_DEFAULT_LENGTH + self.length as u32
+    }
+}
+
+impl SerializableItem for SubItem {
+    fn serialize(&self) -> Result<Vec<u8>> {
+        let mut pdu: Vec<u8> = Vec::new();
+        pdu.push(self.item_type);
+        vec8_add_padding(&mut pdu, 1);
+        pdu.extend_from_slice(&self.length.to_be_bytes());
+
+        match &self.data {
+            SubItemType::String(text) => pdu.extend_from_slice(text.as_bytes()),
+            SubItemType::U32(value) => pdu.extend_from_slice(&value.to_be_bytes()),
+        }
+
+        Ok(pdu)
+    }
+}
+
+pub fn read_associate_rq_ac<R: Read>(mut reader: R) -> Result<AssociateRequestAcceptPdu> {
     todo!();
     /*
     let mut type_buf = [0u8; 1];
@@ -276,7 +389,7 @@ pub fn read_associate_rq_ac<R: Read>(mut reader: R) -> Result<AAssociateRqAc> {
     */
 }
 
-pub fn serialize_association_rq_ac(request: &AAssociateRqAc) -> Result<Vec<u8>> {
+pub fn serialize_association_rq_ac(request: &AssociateRequestAcceptPdu) -> Result<Vec<u8>> {
     let mut pdu: Vec<u8> = Vec::new();
 
     pdu.push(0x01);
@@ -288,7 +401,19 @@ pub fn serialize_association_rq_ac(request: &AAssociateRqAc) -> Result<Vec<u8>> 
 
     vec8_add_padding(&mut pdu, 2);
 
-    pdu.extend_from_slice(&request.called_ae.as_bytes());
+    // Called application entity, add 0x20 as padding
+    let ae = request.called_ae.as_bytes();
+    let len = ae.len().min(16);
+
+    pdu.extend_from_slice(&ae[..len]);
+    pdu.extend(std::iter::repeat(0x20).take(16 - len));
+
+    // Calling application entity
+    let ae = request.calling_ae.as_bytes();
+    let len = ae.len().min(16);
+
+    pdu.extend_from_slice(&ae[..len]);
+    pdu.extend(std::iter::repeat(0x20).take(16 - len));
 
     vec8_add_padding(&mut pdu, 32);
 
@@ -299,6 +424,8 @@ pub fn serialize_association_rq_ac(request: &AAssociateRqAc) -> Result<Vec<u8>> 
     for item in request.presentation_context_items.iter() {
         pdu.extend(serialize_presentation_context_item(item)?);
     }
+
+    pdu.extend(request.user_info_item.serialize()?);
 
     Ok(pdu)
 }
@@ -317,17 +444,19 @@ fn serialize_application_context_item(item: &ApplicationContextItem) -> Result<V
 fn serialize_presentation_context_item(item: &PresentationContextItem) -> Result<Vec<u8>> {
     let mut pdu: Vec<u8> = Vec::new();
 
-    pdu.push(item.item_type as u8);
+    pdu.push(item.item_type.into());
     vec8_add_padding(&mut pdu, 1);
     pdu.extend_from_slice(&item.length.to_be_bytes());
     pdu.push(item.context_id);
+
+    vec8_add_padding(&mut pdu, 1);
 
     // Add result if it exists
     if let Some(result) = item.result.clone() {
         pdu.push(result.into());
     }
     else {
-        vec8_add_padding(&mut pdu, 1);
+        pdu.push(0xff);
     }
 
     vec8_add_padding(&mut pdu, 1);
@@ -346,10 +475,15 @@ fn serialize_presentation_context_item(item: &PresentationContextItem) -> Result
 fn serialize_syntax_item(item: &SyntaxItem) -> Result<Vec<u8>> {
     let mut pdu: Vec<u8> = Vec::new();
 
-    pdu.push(item.item_type as u8);
+    pdu.push(item.item_type.into());
     vec8_add_padding(&mut pdu, 1);
     pdu.extend_from_slice(&item.length.to_be_bytes());
     pdu.extend_from_slice(&item.syntax.as_bytes());
 
     Ok(pdu)
+}
+
+/// Deserializes a A-ASSOCIATE-RQ or A-ASSOCIATE-AC PDU. Takes a reader of u8
+pub fn deserialize_association_pdu<T: Read>(reader: &mut T) -> Result<AssociateRequestAcceptPdu> {
+    todo!()
 }

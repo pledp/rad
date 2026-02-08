@@ -41,7 +41,7 @@ impl From<&str> for ValueRepresentation {
 
 /// Some data elements with specific VR have slightly different structure in memory.
 ///
-/// See [DICOM standard part 5 subsection 7.1.2](https://dicom.nema.org/medical/dicom/current/output/html/part05.html#sect_7.1.2)
+/// See [DICOM standard part 5 subsection 7.1.2](https://dicom.nema.org/medical/dicom/current/output/html/part05.html#sect_7.1.2).
 const SUBSET_VRS: [ValueRepresentation; 21] = [
     ValueRepresentation::AE,
     ValueRepresentation::AS,
