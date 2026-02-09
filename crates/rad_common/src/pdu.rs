@@ -5,12 +5,13 @@ use std::string::String;
 use crate::{Result, Error};
 use crate::associate::{ AssociateRequestAcceptPdu };
 
-const APPLICATION_CONTEXT_NAME: &'static str = "1.2.840.10008.3.1.1.1";
+/// The length of the PDU-type field in the PDU.
+pub(crate) const PDU_TYPE_LENGTH: usize = 1;
 
-// TODO: Implement for all PDU and related items
-pub trait SerializableItem {
-    fn serialize(&self) -> Result<Vec<u8>>;
-}
+/// The length of the PDU-length field in the PDU.
+pub(crate) const PDU_LENGTH_LENGTH: usize = 4;
+
+const APPLICATION_CONTEXT_NAME: &'static str = "1.2.840.10008.3.1.1.1";
 
 #[repr(u8)]
 pub enum PduType {

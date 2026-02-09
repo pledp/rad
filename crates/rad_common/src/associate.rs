@@ -2,8 +2,14 @@ use std::convert::TryFrom;
 use std::io::Read;
 use std::string::String;
 
-use crate::pdu::{ PduType, vec8_add_padding, SerializableItem };
+use crate::pdu::{ PDU_TYPE_LENGTH, PDU_LENGTH_LENGTH, PduType, vec8_add_padding, read_padding };
 use crate::Result;
+
+/// The length of the Protocol Version field in a A-ASSOCIATE-RQ or A-ASSOCIATE-AC PDU
+const PROTOCOL_VERSION_LENGTH: usize = 2;
+
+/// The length of the Called-AE and Calling-AE fields in a A-ASSOCIATE-RQ or A-ASSOCIATE-AC PDU
+const AE_LENGTH: usize = 16;
 
 /// Events related to A-ASSOCIATE. Events lead to actions defined by the DICOM standard.
 ///
@@ -177,7 +183,7 @@ impl PresentationContextItem {
         todo!();
     }
 
-    pub fn item_length(&self ) -> u32 {
+    pub fn item_length(&self) -> u32 {
         // Length field does not include first 4 bytes of item
         const PRESENTATION_ITEM_INCLUSIVE_LENGTH: u16 = 4;
         (PRESENTATION_ITEM_INCLUSIVE_LENGTH + self.length) as u32
@@ -310,23 +316,6 @@ impl UserInfoItem {
     }
 }
 
-impl SerializableItem for UserInfoItem {
-    fn serialize(&self) -> Result<Vec<u8>> {
-        let mut pdu: Vec<u8> = Vec::new();
-
-        pdu.push(self.item_type);
-        vec8_add_padding(&mut pdu, 1);
-
-        pdu.extend_from_slice(&self.length.to_be_bytes());
-
-        for item in self.sub_items.iter() {
-            pdu.extend(item.serialize()?);
-        }
-
-        Ok(pdu)
-    }
-}
-
 enum SubItemType {
     U32(u32),
     String(String),
@@ -354,39 +343,6 @@ impl SubItem {
         const USER_ITEM_DEFAULT_LENGTH: u32 = 4;
         USER_ITEM_DEFAULT_LENGTH + self.length as u32
     }
-}
-
-impl SerializableItem for SubItem {
-    fn serialize(&self) -> Result<Vec<u8>> {
-        let mut pdu: Vec<u8> = Vec::new();
-        pdu.push(self.item_type);
-        vec8_add_padding(&mut pdu, 1);
-        pdu.extend_from_slice(&self.length.to_be_bytes());
-
-        match &self.data {
-            SubItemType::String(text) => pdu.extend_from_slice(text.as_bytes()),
-            SubItemType::U32(value) => pdu.extend_from_slice(&value.to_be_bytes()),
-        }
-
-        Ok(pdu)
-    }
-}
-
-pub fn read_associate_rq_ac<R: Read>(mut reader: R) -> Result<AssociateRequestAcceptPdu> {
-    todo!();
-    /*
-    let mut type_buf = [0u8; 1];
-    reader.read_exact(&mut type_buf);
-
-    let pdu_type: PduType = type_buf[0].try_into()?;
-
-    Ok(AAssociateRq {
-        pdu_type: PduType::AssociateRq,
-        length: 2,
-        called_ae: "test".into(),
-        calling_ae: "test2".into(),
-    })
-    */
 }
 
 pub fn serialize_association_rq_ac(request: &AssociateRequestAcceptPdu) -> Result<Vec<u8>> {
@@ -425,7 +381,7 @@ pub fn serialize_association_rq_ac(request: &AssociateRequestAcceptPdu) -> Resul
         pdu.extend(serialize_presentation_context_item(item)?);
     }
 
-    pdu.extend(request.user_info_item.serialize()?);
+    pdu.extend(serialize_user_info_item(&request.user_info_item)?);
 
     Ok(pdu)
 }
@@ -483,7 +439,66 @@ fn serialize_syntax_item(item: &SyntaxItem) -> Result<Vec<u8>> {
     Ok(pdu)
 }
 
+fn serialize_user_info_item(item: &UserInfoItem) -> Result<Vec<u8>> {
+    let mut pdu: Vec<u8> = Vec::new();
+
+    pdu.push(item.item_type);
+    vec8_add_padding(&mut pdu, 1);
+
+    pdu.extend_from_slice(&item.length.to_be_bytes());
+
+    for item in item.sub_items.iter() {
+        pdu.extend(serialize_sub_item(&item)?);
+    }
+
+    Ok(pdu)
+}
+
+fn serialize_sub_item(item: &SubItem) -> Result<Vec<u8>> {
+    let mut pdu: Vec<u8> = Vec::new();
+    pdu.push(item.item_type);
+    vec8_add_padding(&mut pdu, 1);
+    pdu.extend_from_slice(&item.length.to_be_bytes());
+
+    match &item.data {
+        SubItemType::String(text) => pdu.extend_from_slice(text.as_bytes()),
+        SubItemType::U32(value) => pdu.extend_from_slice(&value.to_be_bytes()),
+    }
+
+    Ok(pdu)
+}
+
 /// Deserializes a A-ASSOCIATE-RQ or A-ASSOCIATE-AC PDU. Takes a reader of u8
 pub fn deserialize_association_pdu<T: Read>(reader: &mut T) -> Result<AssociateRequestAcceptPdu> {
-    todo!()
+    let mut pdu_type = [0u8; PDU_TYPE_LENGTH];
+    reader.read_exact(&mut pdu_type)?;
+
+    read_padding(reader, 2);
+
+    let mut pdu_length = [0u8; PDU_LENGTH_LENGTH];
+    reader.read_exact(&mut pdu_length)?;
+
+    let mut protocol_version = [0u8; PROTOCOL_VERSION_LENGTH];
+    reader.read_exact(&mut protocol_version)?;
+
+    read_padding(reader, 2);
+
+    let mut called_ae = [0u8; AE_LENGTH];
+    reader.read_exact(&mut called_ae)?;
+
+    let mut calling_ae = [0u8; AE_LENGTH];
+    reader.read_exact(&mut called_ae)?;
+
+    read_padding(reader, 32);
+    todo!();
+
+    /*
+    Ok(Self {
+        pdu_type: pdu_type[0].try_into()?,
+        length: u32::from_be_bytes(pdu_length),
+        protocol_version: u16::from_be_bytes(protocol_version),
+        called_ae: String::from_utf8(called_ae.to_vec())?,
+        calling_ae: String::from_utf8(calling_ae.to_vec())?,
+    });
+    */
 }
