@@ -1,19 +1,19 @@
 mod pacs;
 
 use core::net::SocketAddr;
-use std::sync::Arc;
-use std::io::{ Cursor };
 use std::collections::HashMap;
+use std::io::Cursor;
 use std::string::String;
+use std::sync::Arc;
 
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
-    net::{TcpListener, TcpStream}
+    net::{TcpListener, TcpStream},
 };
 
 use rad_common::{
-    pdu::{PduHeader, PduType, read_pdu_header},
     associate::deserialize_association_pdu,
+    pdu::{PduHeader, PduType, read_pdu_header},
 };
 
 use crate::pacs::Pacs;
@@ -33,7 +33,8 @@ async fn main() -> Result<()> {
     let mut application_entities: HashMap<String, Box<dyn ApplicationEntity>> = HashMap::new();
     application_entities.insert("rad".into(), Box::new(Pacs {}));
 
-    let application_registry: Arc<HashMap<String, Box<dyn ApplicationEntity>>> = Arc::new(application_entities);
+    let application_registry: Arc<HashMap<String, Box<dyn ApplicationEntity>>> =
+        Arc::new(application_entities);
 
     loop {
         let (mut tcp, mut socket_addr) = server.accept().await?;
@@ -44,11 +45,13 @@ async fn main() -> Result<()> {
 }
 
 async fn handle_client(mut tcp: TcpStream, mut socket_addr: SocketAddr) -> Result<()> {
-    println!("Connected client: {}:{}", socket_addr.ip(), socket_addr.port());
+    println!(
+        "Connected client: {}:{}",
+        socket_addr.ip(),
+        socket_addr.port()
+    );
 
-    let conn = Connection::from_stream(tcp)
-        .listen_for_request().await?;
-
+    let conn = Connection::from_stream(tcp).listen_for_request().await?;
 
     Ok(())
 }
@@ -103,9 +106,7 @@ impl Connection<Waiting> {
                 let mut cursor = Cursor::new(buffer);
                 let pdu = deserialize_association_pdu(&mut cursor);
             }
-            _ => {
-                return Err("Invalid PDU type".into())
-            }
+            _ => return Err("Invalid PDU type".into()),
         };
 
         Ok(AssociateResult::Accepted)

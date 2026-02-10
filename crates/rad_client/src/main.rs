@@ -5,8 +5,8 @@ use tokio::{
     net::TcpStream,
 };
 
+use rad_common::associate::{AssociateRequestAcceptPdu, serialize_association_pdu};
 use rad_common::open_file;
-use rad_common::associate::{AssociateRequestAcceptPdu, serialize_association_rq_ac};
 
 pub type Result<T> = std::result::Result<T, Error>;
 pub type Error = Box<dyn std::error::Error + Send + Sync>;
@@ -22,7 +22,9 @@ async fn main() -> Result<()> {
 
     let mut writer = BufWriter::new(stream);
 
-    writer.write_all(serialize_association_rq_ac(&pdu)?.as_slice()).await?;
+    writer
+        .write_all(serialize_association_pdu(&pdu)?.as_slice())
+        .await?;
     writer.flush().await?;
 
     // Read response

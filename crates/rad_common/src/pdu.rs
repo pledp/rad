@@ -2,10 +2,10 @@ use std::convert::TryFrom;
 use std::io::Read;
 use std::string::String;
 
-use crate::{Result, Error};
-use crate::associate::{ AssociateRequestAcceptPdu };
+use crate::associate::AssociateRequestAcceptPdu;
+use crate::{Error, Result};
 
-/// The length of the PDU-type field in the PDU.
+/// The length of the PDU-type field in the PDU. The Item Type field is the same in A-ASSOCIATION PDU's.
 pub(crate) const PDU_TYPE_LENGTH: usize = 1;
 
 /// The length of the PDU-length field in the PDU.
@@ -63,7 +63,7 @@ pub fn read_pdu_header<R: Read>(reader: &mut R) -> Result<PduHeader> {
 
 // TODO: Add validation that read padding is actually 0x00
 pub(crate) fn read_padding<R: Read>(reader: &mut R, n: usize) {
-    let mut buf = vec!(0u8; n);
+    let mut buf = vec![0u8; n];
     reader.read_exact(&mut buf).unwrap();
 }
 

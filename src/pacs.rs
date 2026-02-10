@@ -1,6 +1,5 @@
 /// The PACS DICOM application entity.
-
-use crate::{ ApplicationEntity, AssociateResult };
+use crate::{ApplicationEntity, AssociateResult};
 
 pub struct Pacs {}
 
