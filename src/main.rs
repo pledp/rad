@@ -1,3 +1,4 @@
+mod adapter;
 mod pacs;
 
 use core::net::SocketAddr;
@@ -16,14 +17,15 @@ use rad_common::{
     pdu::{PduHeader, PduType, read_pdu_header},
 };
 
-use crate::pacs::Pacs;
+use crate::{
+    adapter::{ApplicationEntity, AssociationResult},
+    pacs::Pacs
+};
 
 pub type Result<T> = std::result::Result<T, Error>;
 pub type Error = Box<dyn std::error::Error + Send + Sync>;
 
-trait ApplicationEntity {
-    fn handle_associate_request(&self) -> AssociateResult;
-}
+type ApplicationEntityRegistry = Arc<HashMap<String, Box<dyn ApplicationEntity>>>;
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -33,32 +35,30 @@ async fn main() -> Result<()> {
     let mut application_entities: HashMap<String, Box<dyn ApplicationEntity>> = HashMap::new();
     application_entities.insert("rad".into(), Box::new(Pacs {}));
 
-    let application_registry: Arc<HashMap<String, Box<dyn ApplicationEntity>>> =
+    let application_registry: ApplicationEntityRegistry =
         Arc::new(application_entities);
 
     loop {
         let (mut tcp, mut socket_addr) = server.accept().await?;
-        tokio::spawn(handle_client(tcp, socket_addr));
+
+        let registry = Arc::clone(&application_registry);
+
+        tokio::spawn(handle_client(tcp, socket_addr, registry));
     }
 
     Ok(())
 }
 
-async fn handle_client(mut tcp: TcpStream, mut socket_addr: SocketAddr) -> Result<()> {
+async fn handle_client(mut tcp: TcpStream, mut socket_addr: SocketAddr, registry: ApplicationEntityRegistry) -> Result<()> {
     println!(
         "Connected client: {}:{}",
         socket_addr.ip(),
         socket_addr.port()
     );
 
-    let conn = Connection::from_stream(tcp).listen_for_request().await?;
+    let conn = Connection::from_tcp_stream(tcp, registry).listen_for_request().await?;
 
     Ok(())
-}
-
-enum AssociateResult {
-    Accepted,
-    Rejected,
 }
 
 struct Established {}
@@ -67,27 +67,29 @@ struct Closing {}
 /// DICOM upper layer connection state 2 (Sta2).
 ///
 /// Waiting for A-ASSOCIATE-RQ PDU from client.
-struct Waiting {}
+struct Waiting {
+    registry: ApplicationEntityRegistry
+}
 
 /// DICOM upper layer connection.
 /// The DICOM standard defines different states for the system. Different states transition differently depending on performed actions.
 ///
 /// See [DICOM standard part 8](https://dicom.nema.org/medical/dicom/current/output/html/part08).
-struct Connection<S = Waiting> {
+struct Connection<S> {
     stream: TcpStream,
     state_data: S,
 }
 
 impl Connection<Waiting> {
-    pub fn from_stream(stream: TcpStream) -> Self {
+    pub fn from_tcp_stream(stream: TcpStream, registry: ApplicationEntityRegistry) -> Self {
         Self {
             stream,
-            state_data: Waiting {},
+            state_data: Waiting {registry},
         }
     }
 
     /// Wait for incoming A-ASSOCIATE-RQ PDU.
-    pub async fn listen_for_request(mut self) -> Result<AssociateResult> {
+    pub async fn listen_for_request(mut self) -> Result<AssociationResult> {
         // Read DICOM header
         let mut buffer = [0u8; 6];
 
@@ -104,11 +106,13 @@ impl Connection<Waiting> {
                 let n = self.stream.read_exact(&mut buffer).await?;
 
                 let mut cursor = Cursor::new(buffer);
-                let pdu = deserialize_association_pdu(&mut cursor);
+                let pdu = deserialize_association_pdu(&mut cursor)?;
+
+                let registry = &self.state_data.registry;
+
+                Ok(AssociationResult::Accepted)
             }
             _ => return Err("Invalid PDU type".into()),
-        };
-
-        Ok(AssociateResult::Accepted)
+        }
     }
 }

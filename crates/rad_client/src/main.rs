@@ -5,7 +5,7 @@ use tokio::{
     net::TcpStream,
 };
 
-use rad_common::associate::{AssociateRequestAcceptPdu, serialize_association_pdu};
+use rad_common::associate::{AssociateRqAcPdu, serialize_association_pdu};
 use rad_common::open_file;
 
 pub type Result<T> = std::result::Result<T, Error>;
@@ -18,7 +18,7 @@ async fn main() -> Result<()> {
     let mut stream = TcpStream::connect("127.0.0.1:104").await?;
     println!("Connected to server");
 
-    let pdu = AssociateRequestAcceptPdu::new_rq("test1", "test2");
+    let pdu = AssociateRqAcPdu::new_rq("test1", "rad");
 
     let mut writer = BufWriter::new(stream);
 

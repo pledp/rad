@@ -2,7 +2,7 @@ use std::convert::TryFrom;
 use std::io::Read;
 use std::string::String;
 
-use crate::associate::AssociateRequestAcceptPdu;
+use crate::associate::AssociateRqAcPdu;
 use crate::{Error, Result};
 
 /// The length of the PDU-type field in the PDU. The Item Type field is the same in A-ASSOCIATION PDU's.
