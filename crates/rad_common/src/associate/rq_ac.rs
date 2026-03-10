@@ -112,6 +112,7 @@ pub struct AssociateRqAcPdu {
 }
 
 // TODO: Add builder; several presentation context items; new_rq free function
+// TODO: move new_rq to free function, add new
 impl AssociateRqAcPdu {
     pub fn new_rq(called_ae: &str, calling_ae: &str) -> Self {
         // 68 is the length of the A-ASSOCIATE-RQ/AC PDU minus the variable fields

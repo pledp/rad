@@ -1,0 +1,7 @@
+[package]
+name = "eradic_adaptor"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+rad_common = { path = "../rad_common", version = "0.1.0" }

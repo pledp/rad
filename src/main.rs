@@ -1,11 +1,10 @@
-mod adapter;
 mod pacs;
 
 use core::net::SocketAddr;
-use std::collections::HashMap;
 use std::io::Cursor;
 use std::string::String;
-use std::sync::Arc;
+use std::collections::HashMap;
+use std::sync::{Arc, Mutex};
 
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
@@ -17,26 +16,24 @@ use rad_common::{
     pdu::{PduHeader, PduType, read_pdu_header},
 };
 
+use eradic_adaptor::{AssociationResult, ApplicationEntityAdapter, ApplicationEntityRegistry, handle_associate_request };
+
 use crate::{
-    adapter::{ApplicationEntity, AssociationResult},
-    pacs::Pacs
+    pacs::Pacs,
 };
 
 pub type Result<T> = std::result::Result<T, Error>;
 pub type Error = Box<dyn std::error::Error + Send + Sync>;
-
-type ApplicationEntityRegistry = Arc<HashMap<String, Box<dyn ApplicationEntity>>>;
 
 #[tokio::main]
 async fn main() -> Result<()> {
     let server = TcpListener::bind("127.0.0.1:104").await?;
     println!("Listening for connections...");
 
-    let mut application_entities: HashMap<String, Box<dyn ApplicationEntity>> = HashMap::new();
+    let mut application_entities: ApplicationEntityRegistry = HashMap::new();
     application_entities.insert("rad".into(), Box::new(Pacs {}));
 
-    let application_registry: ApplicationEntityRegistry =
-        Arc::new(application_entities);
+    let application_registry = Arc::new(Mutex::new(application_entities));
 
     loop {
         let (mut tcp, mut socket_addr) = server.accept().await?;
@@ -49,7 +46,7 @@ async fn main() -> Result<()> {
     Ok(())
 }
 
-async fn handle_client(mut tcp: TcpStream, mut socket_addr: SocketAddr, registry: ApplicationEntityRegistry) -> Result<()> {
+async fn handle_client(mut tcp: TcpStream, mut socket_addr: SocketAddr, registry: Arc<Mutex<ApplicationEntityRegistry>>) -> Result<()> {
     println!(
         "Connected client: {}:{}",
         socket_addr.ip(),
@@ -68,7 +65,7 @@ struct Closing {}
 ///
 /// Waiting for A-ASSOCIATE-RQ PDU from client.
 struct Waiting {
-    registry: ApplicationEntityRegistry
+    registry: Arc<Mutex<ApplicationEntityRegistry>>
 }
 
 /// DICOM upper layer connection.
@@ -81,7 +78,7 @@ struct Connection<S> {
 }
 
 impl Connection<Waiting> {
-    pub fn from_tcp_stream(stream: TcpStream, registry: ApplicationEntityRegistry) -> Self {
+    pub fn from_tcp_stream(stream: TcpStream, registry: Arc<Mutex<ApplicationEntityRegistry>>) -> Self {
         Self {
             stream,
             state_data: Waiting {registry},
@@ -108,9 +105,13 @@ impl Connection<Waiting> {
                 let mut cursor = Cursor::new(buffer);
                 let pdu = deserialize_association_pdu(&mut cursor)?;
 
-                let registry = &self.state_data.registry;
+                {
+                    let mut guard = self.state_data.registry.lock().unwrap();
+                    handle_associate_request(&mut guard);
+                }
 
-                Ok(AssociationResult::Accepted)
+
+                todo!()
             }
             _ => return Err("Invalid PDU type".into()),
         }

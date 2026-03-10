@@ -1,10 +1,10 @@
 use rad_common::associate::AssociateRqAcPdu;
 
-use crate::adapter::{ApplicationEntity, AssociationResult};
+use eradic_adaptor::{ApplicationEntityAdapter, AssociationResult};
 
 pub struct Pacs {}
 
-impl ApplicationEntity for Pacs {
+impl ApplicationEntityAdapter for Pacs {
     fn handle_associate_request(&self, pdu: AssociateRqAcPdu) -> AssociationResult {
         AssociationResult::Accepted
     }
