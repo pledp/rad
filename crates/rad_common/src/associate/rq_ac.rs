@@ -270,7 +270,7 @@ pub fn deserialize_association_pdu<T: Read>(reader: &mut T) -> Result<AssociateR
 }
 
 // TODO: item_type struct
-struct ApplicationContextItem {
+pub struct ApplicationContextItem {
     pub item_type: u8,
     pub length: u16,
     pub context_name: String,
@@ -326,7 +326,7 @@ fn deserialize_application_context_item<T: Read>(reader: &mut T) -> Result<Appli
     })
 }
 
-struct PresentationContextItem {
+pub struct PresentationContextItem {
     pub item_type: AssociationItemType,
     pub length: u16,
     pub context_id: u8,
@@ -411,7 +411,7 @@ impl From<AssociateResult> for u8 {
     }
 }
 
-struct SyntaxItem {
+pub struct SyntaxItem {
     pub item_type: AssociationItemType,
     pub length: u16,
     pub syntax: String,
@@ -566,7 +566,7 @@ fn deserialize_syntax_item<T: Read>(reader: &mut T) -> Result<SyntaxItem> {
     })
 }
 
-struct UserInfoItem {
+pub struct UserInfoItem {
     pub item_type: AssociationItemType,
     pub length: u16,
     pub sub_items: Vec<SubItem>,

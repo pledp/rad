@@ -1,10 +1,10 @@
-mod pacs;
+mod service_user;
 
 use core::net::SocketAddr;
 use std::io::Cursor;
 use std::string::String;
 use std::collections::HashMap;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, atomic::{AtomicI64, Ordering}};
 
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
@@ -12,14 +12,18 @@ use tokio::{
 };
 
 use rad_common::{
-    associate::deserialize_association_pdu,
-    pdu::{PduHeader, PduType, read_pdu_header},
+    associate::{
+        AssociateRqAcPdu, deserialize_association_pdu,
+        rj::{RejectReason, AcseReason, PresentationReason, RejectSource, RejectResult}
+    },
+    pdu::{PduHeader, PduType, read_pdu_header}
 };
 
-use eradic_adaptor::{AssociationResult, ApplicationEntityAdapter, ApplicationEntityRegistry, handle_associate_request };
+
+use eradic_adaptor::{AssociationResult, UpperLayerServiceUser};
 
 use crate::{
-    pacs::Pacs,
+    service_user::ServiceUser,
 };
 
 pub type Result<T> = std::result::Result<T, Error>;
@@ -30,30 +34,41 @@ async fn main() -> Result<()> {
     let server = TcpListener::bind("127.0.0.1:104").await?;
     println!("Listening for connections...");
 
-    let mut application_entities: ApplicationEntityRegistry = HashMap::new();
-    application_entities.insert("rad".into(), Box::new(Pacs {}));
+    let service_user = Arc::new(Mutex::new(ServiceUser::new()));
 
-    let application_registry = Arc::new(Mutex::new(application_entities));
+    let client_count = Arc::new(AtomicI64::new(0));
 
     loop {
         let (mut tcp, mut socket_addr) = server.accept().await?;
+        let service_user_clone = Arc::clone(&service_user);
+        let client_count_clone = Arc::clone(&client_count);
 
-        let registry = Arc::clone(&application_registry);
+        tokio::spawn(async move {
+            client_count_clone.fetch_add(1, Ordering::AcqRel);
 
-        tokio::spawn(handle_client(tcp, socket_addr, registry));
+            let result = handle_client(tcp, socket_addr, service_user_clone).await;
+
+            client_count_clone.fetch_sub(1, Ordering::AcqRel);
+
+            result
+        });
     }
 
     Ok(())
 }
 
-async fn handle_client(mut tcp: TcpStream, mut socket_addr: SocketAddr, registry: Arc<Mutex<ApplicationEntityRegistry>>) -> Result<()> {
+async fn handle_client<U: UpperLayerServiceUser>(
+    mut tcp: TcpStream,
+    mut socket_addr: SocketAddr,
+    service_user: Arc<Mutex<U>>)
+-> Result<()> {
     println!(
         "Connected client: {}:{}",
         socket_addr.ip(),
         socket_addr.port()
     );
 
-    let conn = Connection::from_tcp_stream(tcp, registry).listen_for_request().await?;
+    let conn = Connection::from_tcp_stream(tcp, service_user).listen_for_request().await?;
 
     Ok(())
 }
@@ -64,12 +79,13 @@ struct Closing {}
 /// DICOM upper layer connection state 2 (Sta2).
 ///
 /// Waiting for A-ASSOCIATE-RQ PDU from client.
-struct Waiting {
-    registry: Arc<Mutex<ApplicationEntityRegistry>>
+struct Waiting<U: UpperLayerServiceUser> {
+    service_user: Arc<Mutex<U>>
 }
 
 /// DICOM upper layer connection.
-/// The DICOM standard defines different states for the system. Different states transition differently depending on performed actions.
+/// The DICOM standard defines different states for the system. Different states transition differently
+/// depending on performed actions.
 ///
 /// See [DICOM standard part 8](https://dicom.nema.org/medical/dicom/current/output/html/part08).
 struct Connection<S> {
@@ -77,11 +93,11 @@ struct Connection<S> {
     state_data: S,
 }
 
-impl Connection<Waiting> {
-    pub fn from_tcp_stream(stream: TcpStream, registry: Arc<Mutex<ApplicationEntityRegistry>>) -> Self {
+impl<U: UpperLayerServiceUser> Connection<Waiting<U>> {
+    pub fn from_tcp_stream(stream: TcpStream, service_user: Arc<Mutex<U>>) -> Self {
         Self {
             stream,
-            state_data: Waiting {registry},
+            state_data: Waiting {service_user},
         }
     }
 
@@ -105,15 +121,30 @@ impl Connection<Waiting> {
                 let mut cursor = Cursor::new(buffer);
                 let pdu = deserialize_association_pdu(&mut cursor)?;
 
-                {
-                    let mut guard = self.state_data.registry.lock().unwrap();
-                    handle_associate_request(&mut guard);
-                }
+                service_provider_rq_pdu_validation(&pdu);
 
+                {
+                    let mut guard = self.state_data.service_user.lock().unwrap();
+                    guard.handle_associate_request(pdu);
+                }
 
                 todo!()
             }
             _ => return Err("Invalid PDU type".into()),
         }
     }
+}
+
+fn service_provider_rq_pdu_validation(pdu: &AssociateRqAcPdu) -> Result<Option<AssociationResult>> {
+    let source = RejectSource::Acse;
+
+    if pdu.protocol_version != 1 {
+        return Ok(Some(AssociationResult::Rejected {
+            result: RejectResult::Transient,
+            source,
+            reason: RejectReason::Acse(AcseReason::ProtocolNotSupported)
+        }))
+    }
+
+    todo!();
 }

@@ -17,19 +17,19 @@ pub enum RejectReason {
     Presentation(PresentationReason)
 }
 
-enum ServiceUserReason {
+pub enum ServiceUserReason {
     NoReason,
     ApplicationContextNameNotSupported,
     CalingAeNotRecognized,
     CalledAeNotRecognized,
 }
 
-enum AcseReason {
+pub enum AcseReason {
     NoReason,
     ProtocolNotSupported,
 }
 
-enum PresentationReason {
+pub enum PresentationReason {
     TemporaryCongestion,
     LocalLimitExceeded
 }

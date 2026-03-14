@@ -12,3 +12,4 @@ members = [
 tokio = { version = "1.48.0", features = ["full"] }
 rad_common = { path = "./crates/rad_common", version = "0.1.0" }
 eradic_adaptor = { path = "./crates/eradic_adaptor", version = "0.1.0" }
+async-trait = "0.1.89"
