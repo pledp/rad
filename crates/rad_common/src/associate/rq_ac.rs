@@ -6,6 +6,7 @@ use std::string::String;
 
 use crate::Result;
 use crate::pdu::{PDU_LENGTH_LENGTH, PDU_TYPE_LENGTH, PduType, read_padding, vec8_add_padding};
+use crate::associate::{MaximumLength, UserInformation};
 
 /// Length of the Protocol Version field in a A-ASSOCIATE-RQ or A-ASSOCIATE-AC PDU
 const PROTOCOL_VERSION_LENGTH: usize = 2;
@@ -104,11 +105,11 @@ pub struct AssociateRqAcPdu {
     pub pdu_type: PduType,
     pub length: u32,
     pub protocol_version: u16,
-    pub called_ae: String,
-    pub calling_ae: String,
+    called_ae: String,
+    calling_ae: String,
     pub application_context_item: ApplicationContextItem,
     pub presentation_context_items: Vec<PresentationContextItem>,
-    pub user_info_item: UserInfoItem,
+    user_info_item: UserInfoItem,
 }
 
 // TODO: Add builder; several presentation context items; new_rq free function
@@ -151,6 +152,26 @@ impl AssociateRqAcPdu {
             presentation_context_items,
             user_info_item,
         }
+    }
+
+    pub fn context_name(&self) -> &str {
+        self.application_context_item.context_name()
+    }
+
+    pub fn called_ae(&self) -> &str {
+        &self.called_ae
+    }
+
+    pub fn calling_ae(&self) -> &str {
+        &self.calling_ae
+    }
+
+    pub fn presentation_context_items(&self) -> &Vec<PresentationContextItem> {
+        &self.presentation_context_items
+    }
+
+    pub fn user_information(&self) -> &Vec<UserInformationSubItem> {
+        &self.user_info_item.sub_items()
     }
 }
 
@@ -273,7 +294,7 @@ pub fn deserialize_association_pdu<T: Read>(reader: &mut T) -> Result<AssociateR
 pub struct ApplicationContextItem {
     pub item_type: u8,
     pub length: u16,
-    pub context_name: String,
+    context_name: String,
 }
 
 impl ApplicationContextItem {
@@ -291,6 +312,10 @@ impl ApplicationContextItem {
         const APPLICATION_ITEM_DEFAULT_LENGTH: u32 = 4;
 
         APPLICATION_ITEM_DEFAULT_LENGTH + self.length as u32
+    }
+
+    pub fn context_name(&self) -> &str {
+        &self.context_name
     }
 }
 
@@ -372,6 +397,18 @@ impl PresentationContextItem {
         const PRESENTATION_ITEM_INCLUSIVE_LENGTH: u16 = 4;
         (PRESENTATION_ITEM_INCLUSIVE_LENGTH + self.length) as u32
     }
+
+    pub fn abstract_syntax(&self) -> Option<&str> {
+        self.abstract_syntax_item.as_ref().map(|item| item.syntax())
+    }
+
+    pub fn transfer_syntax(&self) -> Vec<&str> {
+        self
+            .transfer_syntax_items
+            .iter()
+            .map(|item| item.syntax())
+            .collect()
+    }
 }
 
 #[derive(Clone, Copy)]
@@ -414,7 +451,7 @@ impl From<AssociateResult> for u8 {
 pub struct SyntaxItem {
     pub item_type: AssociationItemType,
     pub length: u16,
-    pub syntax: String,
+    syntax: String,
 }
 
 impl SyntaxItem {
@@ -434,6 +471,10 @@ impl SyntaxItem {
         );
 
         SYNTAX_ITEM_DEFAULT_LENGTH + self.length as u32
+    }
+
+    pub fn syntax(&self) -> &str {
+        &self.syntax
     }
 }
 
@@ -569,17 +610,19 @@ fn deserialize_syntax_item<T: Read>(reader: &mut T) -> Result<SyntaxItem> {
 pub struct UserInfoItem {
     pub item_type: AssociationItemType,
     pub length: u16,
-    pub sub_items: Vec<SubItem>,
+    pub sub_items: Vec<UserInformationSubItem>,
 }
 
 impl UserInfoItem {
     pub fn new() -> Self {
         let mut length = 0;
 
-        let mut sub_items: Vec<SubItem> = Vec::new();
+        let mut sub_items: Vec<UserInformationSubItem> = Vec::new();
 
         // Mandatory Maximum Length Sub-Item
-        sub_items.push(SubItem::new(0x51, SubItemType::U32(16384)));
+        sub_items.push(UserInformationSubItem::new(0x51, UserInformation::MaximumLength(
+            MaximumLength{ maximum_length: 300 }
+        )));
 
         length += sub_items.iter().map(|item| item.item_length()).sum::<u32>();
 
@@ -593,6 +636,10 @@ impl UserInfoItem {
     pub fn item_length(&self) -> u32 {
         const USER_ITEM_DEFAULT_LENGTH: u32 = 4;
         USER_ITEM_DEFAULT_LENGTH + self.length as u32
+    }
+
+    pub fn sub_items(&self) -> &Vec<UserInformationSubItem> {
+        &self.sub_items
     }
 }
 
@@ -627,7 +674,7 @@ fn deserialize_user_info_item<T: Read>(reader: &mut T) -> Result<UserInfoItem> {
         length as u64
     ));
 
-    let mut sub_items: Vec<SubItem> = Vec::new();
+    let mut sub_items: Vec<UserInformationSubItem> = Vec::new();
 
     while !sub_item_reader.fill_buf()?.is_empty() {
         sub_items.push(
@@ -642,28 +689,21 @@ fn deserialize_user_info_item<T: Read>(reader: &mut T) -> Result<UserInfoItem> {
     })
 }
 
-enum SubItemType {
-    U32(u32),
-    String(String),
-    Bytes(Vec<u8>),
-}
-
-struct SubItem {
+pub struct UserInformationSubItem {
     pub item_type: u8,
     pub length: u16,
-    pub data: SubItemType,
+    pub inner: UserInformation,
 }
 
-impl SubItem {
-    pub fn new(item_type: u8, data: SubItemType) -> Self {
+impl UserInformationSubItem {
+    pub fn new(item_type: u8, inner: UserInformation) -> Self {
         Self {
             item_type,
-            length: match &data {
-                SubItemType::String(text) => text.len() as u16,
-                SubItemType::U32(_) => 4,
-                SubItemType::Bytes(array) => array.iter().len() as u16,
+            length: match inner {
+                UserInformation::MaximumLength(_) => 4,
+                _ => 2
             },
-            data,
+            inner,
         }
     }
 
@@ -671,26 +711,35 @@ impl SubItem {
         const USER_ITEM_DEFAULT_LENGTH: u32 = 4;
         USER_ITEM_DEFAULT_LENGTH + self.length as u32
     }
+
+    pub fn item_type(&self) -> u8 {
+        self.item_type
+    }
+
+    pub fn inner(&self) -> &UserInformation {
+        &self.inner
+    }
 }
 
-fn serialize_sub_item(item: &SubItem) -> Result<Vec<u8>> {
+fn serialize_sub_item(item: &UserInformationSubItem) -> Result<Vec<u8>> {
     let mut pdu: Vec<u8> = Vec::new();
     pdu.push(item.item_type);
     vec8_add_padding(&mut pdu, 1);
     pdu.extend_from_slice(&item.length.to_be_bytes());
 
-    match &item.data {
-        SubItemType::String(text) => pdu.extend_from_slice(text.as_bytes()),
-        SubItemType::U32(value) => pdu.extend_from_slice(&value.to_be_bytes()),
-        SubItemType::Bytes(array) => pdu.extend(array),
+    match &item.inner {
+        UserInformation::MaximumLength(user_item) => {
+            pdu.extend_from_slice(&user_item.maximum_length.to_be_bytes());
+        }
     }
 
     Ok(pdu)
 }
 
-fn deserialize_sub_item<T: Read>(reader: &mut T) -> Result<SubItem> {
+fn deserialize_sub_item<T: Read>(reader: &mut T) -> Result<UserInformationSubItem> {
     let mut pdu_type = [0u8; PDU_TYPE_LENGTH];
     reader.read_exact(&mut pdu_type)?;
+    let item_type = pdu_type[0];
 
     read_padding(reader, 1);
 
@@ -702,10 +751,20 @@ fn deserialize_sub_item<T: Read>(reader: &mut T) -> Result<SubItem> {
     let mut value = vec![0u8; length as usize];
     reader.read_exact(&mut value)?;
 
-    Ok(SubItem {
-        item_type: pdu_type[0].try_into()?,
+    Ok(UserInformationSubItem {
+        item_type,
         length,
-        data: SubItemType::Bytes(value),
+        inner: match item_type {
+            0x51 => {
+                // TODO: Figure out how to make expect look better
+                let arr: [u8; 4] = value[..4].try_into().expect("slice must be exactly 4 bytes");
+                let maximum_length = u32::from_be_bytes(arr);
+                UserInformation::MaximumLength(MaximumLength { maximum_length })
+            }
+            _ => {
+                todo!();
+            }
+        }
     })
 }
 

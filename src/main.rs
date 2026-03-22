@@ -2,25 +2,24 @@ mod service_user;
 
 use core::net::SocketAddr;
 use std::io::Cursor;
+use std::net::IpAddr;
 use std::string::String;
 use std::collections::HashMap;
-use std::sync::{Arc, Mutex, atomic::{AtomicI64, Ordering}};
+use std::sync::{Arc, atomic::{AtomicI64, Ordering}};
 
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
     net::{TcpListener, TcpStream},
+    sync::Mutex,
 };
 
 use rad_common::{
-    associate::{
-        AssociateRqAcPdu, deserialize_association_pdu,
-        rj::{RejectReason, AcseReason, PresentationReason, RejectSource, RejectResult}
-    },
-    pdu::{PduHeader, PduType, read_pdu_header}
+    pdu::{PduType, read_pdu_header},
+    associate::AssociationResult,
 };
 
 
-use eradic_adaptor::{AssociationResult, UpperLayerServiceUser};
+use eradic_adaptor::{UpperLayerServiceUser, issue_indication};
 
 use crate::{
     service_user::ServiceUser,
@@ -68,7 +67,7 @@ async fn handle_client<U: UpperLayerServiceUser>(
         socket_addr.port()
     );
 
-    let conn = Connection::from_tcp_stream(tcp, service_user).listen_for_request().await?;
+    let conn = UpperLayerConnection::from_tcp_stream(tcp, socket_addr.ip(), service_user).listen_for_request().await;
 
     Ok(())
 }
@@ -79,8 +78,8 @@ struct Closing {}
 /// DICOM upper layer connection state 2 (Sta2).
 ///
 /// Waiting for A-ASSOCIATE-RQ PDU from client.
-struct Waiting<U: UpperLayerServiceUser> {
-    service_user: Arc<Mutex<U>>
+struct Waiting {
+    client_address: IpAddr
 }
 
 /// DICOM upper layer connection.
@@ -88,16 +87,18 @@ struct Waiting<U: UpperLayerServiceUser> {
 /// depending on performed actions.
 ///
 /// See [DICOM standard part 8](https://dicom.nema.org/medical/dicom/current/output/html/part08).
-struct Connection<S> {
+struct UpperLayerConnection<S, U: UpperLayerServiceUser> {
     stream: TcpStream,
+    service_user: Arc<Mutex<U>>,
     state_data: S,
 }
 
-impl<U: UpperLayerServiceUser> Connection<Waiting<U>> {
-    pub fn from_tcp_stream(stream: TcpStream, service_user: Arc<Mutex<U>>) -> Self {
+impl<U: UpperLayerServiceUser> UpperLayerConnection<Waiting, U> {
+    pub fn from_tcp_stream(stream: TcpStream, mut client_address: IpAddr, service_user: Arc<Mutex<U>>) -> Self {
         Self {
             stream,
-            state_data: Waiting {service_user},
+            service_user,
+            state_data: Waiting {client_address},
         }
     }
 
@@ -119,13 +120,17 @@ impl<U: UpperLayerServiceUser> Connection<Waiting<U>> {
                 let n = self.stream.read_exact(&mut buffer).await?;
 
                 let mut cursor = Cursor::new(buffer);
-                let pdu = deserialize_association_pdu(&mut cursor)?;
 
-                service_provider_rq_pdu_validation(&pdu);
+                let indication = issue_indication(
+                    &mut cursor,
+                    self.state_data.client_address,
+                    self.stream.local_addr()?.ip()
+                )?;
 
                 {
-                    let mut guard = self.state_data.service_user.lock().unwrap();
-                    guard.handle_associate_request(pdu);
+                    let mut guard = self.service_user.lock().await;
+
+                    guard.handle_associate_request(indication).await;
                 }
 
                 todo!()
@@ -133,18 +138,4 @@ impl<U: UpperLayerServiceUser> Connection<Waiting<U>> {
             _ => return Err("Invalid PDU type".into()),
         }
     }
-}
-
-fn service_provider_rq_pdu_validation(pdu: &AssociateRqAcPdu) -> Result<Option<AssociationResult>> {
-    let source = RejectSource::Acse;
-
-    if pdu.protocol_version != 1 {
-        return Ok(Some(AssociationResult::Rejected {
-            result: RejectResult::Transient,
-            source,
-            reason: RejectReason::Acse(AcseReason::ProtocolNotSupported)
-        }))
-    }
-
-    todo!();
 }

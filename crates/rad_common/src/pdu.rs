@@ -11,6 +11,8 @@ pub(crate) const PDU_TYPE_LENGTH: usize = 1;
 /// The length of the PDU-length field in the PDU.
 pub(crate) const PDU_LENGTH_LENGTH: usize = 4;
 
+pub const PDU_HEADER_LENGTH: usize = 6;
+
 const APPLICATION_CONTEXT_NAME: &'static str = "1.2.840.10008.3.1.1.1";
 
 #[repr(u8)]

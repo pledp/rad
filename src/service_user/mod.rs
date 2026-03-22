@@ -3,29 +3,30 @@ use async_trait::async_trait;
 use std::collections::HashMap;
 
 use rad_common::{
-    associate::{
-        AssociateRqAcPdu,
-        rj::{RejectReason, AcseReason, PresentationReason, RejectSource, RejectResult, ServiceUserReason}
+    associate::rj::{AcseReason, PresentationReason, RejectReason, RejectResult, RejectSource, ServiceUserReason},
+    service::{
+        AssociateRequestIndication
     },
+    associate::AssociationResult,
 };
 
-use eradic_adaptor::{AssociationResult, UpperLayerServiceUser};
+use eradic_adaptor::{UpperLayerServiceUser};
 
 pub type ApplicationEntityRegistry = HashMap<String, Box<dyn ApplicationEntity>>;
 
 trait ApplicationEntity: Send + Sync {
-    fn handle_associate_request(&self, pdu: AssociateRqAcPdu) -> AssociationResult;
+    fn handle_associate_request(&self, indication: AssociateRequestIndication) -> AssociationResult;
 }
 
 struct Pacs {}
 
 impl ApplicationEntity for Pacs {
-    fn handle_associate_request(&self, pdu: AssociateRqAcPdu) -> AssociationResult {
-        if pdu.application_context_item.context_name != "1.2.840.10008.3.1.1.1" {
+    fn handle_associate_request(&self, indication: AssociateRequestIndication) -> AssociationResult {
+        if indication.context_name != "1.2.840.10008.3.1.1.1" {
 
         }
 
-        for presentation_context_item in pdu.presentation_context_items {
+        for presentation_context_item in indication.presentation_context {
 
         }
 
@@ -50,10 +51,10 @@ impl ServiceUser {
 
 #[async_trait]
 impl UpperLayerServiceUser for ServiceUser {
-    async fn handle_associate_request(&mut self, pdu: AssociateRqAcPdu) -> AssociationResult {
+    async fn handle_associate_request(&mut self, indication: AssociateRequestIndication) -> AssociationResult {
         let result = self.application_entities
-            .get(&pdu.called_ae)
-            .map(|ae| ae.handle_associate_request(pdu));
+            .get(&indication.called_ae)
+            .map(|ae| ae.handle_associate_request(indication));
 
         match result {
             Some(result) => {

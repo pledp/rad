@@ -1,6 +1,7 @@
 pub mod associate;
 pub mod pdu;
 pub mod vr;
+pub mod service;
 
 use std::collections::HashMap;
 use std::fs::File;
