@@ -1,11 +1,16 @@
 mod service_user;
 
 use core::net::SocketAddr;
+use std::collections::HashMap;
 use std::io::Cursor;
 use std::net::IpAddr;
 use std::string::String;
-use std::collections::HashMap;
-use std::sync::{Arc, atomic::{AtomicI64, Ordering}};
+use std::sync::{
+    Arc,
+    atomic::{AtomicI64, Ordering},
+};
+
+use rad_common::pdu::{PDU_HEADER_LENGTH, PduHeader, read_pdu_header};
 
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
@@ -13,17 +18,11 @@ use tokio::{
     sync::Mutex,
 };
 
-use rad_common::{
-    pdu::{PduType, read_pdu_header},
-    associate::AssociationResult,
+use eradic_adaptor::{
+    UpperLayerServiceUserAsync, association::UpperLayerConnection, handle_pdu_with_state_async,
 };
 
-
-use eradic_adaptor::{UpperLayerServiceUser, issue_indication};
-
-use crate::{
-    service_user::ServiceUser,
-};
+use crate::service_user::ServiceUser;
 
 pub type Result<T> = std::result::Result<T, Error>;
 pub type Error = Box<dyn std::error::Error + Send + Sync>;
@@ -56,86 +55,45 @@ async fn main() -> Result<()> {
     Ok(())
 }
 
-async fn handle_client<U: UpperLayerServiceUser>(
+async fn handle_client<U: UpperLayerServiceUserAsync>(
     mut tcp: TcpStream,
     mut socket_addr: SocketAddr,
-    service_user: Arc<Mutex<U>>)
--> Result<()> {
+    service_user: Arc<Mutex<U>>,
+) -> Result<()> {
     println!(
         "Connected client: {}:{}",
         socket_addr.ip(),
         socket_addr.port()
     );
 
-    let conn = UpperLayerConnection::from_tcp_stream(tcp, socket_addr.ip(), service_user).listen_for_request().await;
+    let mut conn = UpperLayerConnection::new();
+
+    loop {
+        let header = tokio_read_pdu_header(&mut tcp).await?;
+        let mut buffer = vec![0u8; PDU_HEADER_LENGTH + header.length as usize];
+        let n = tcp.read_exact(&mut buffer).await?;
+
+        let mut cursor = Cursor::new(buffer);
+
+        let mut guard = service_user.lock().await;
+        conn = handle_pdu_with_state_async(
+            &mut cursor,
+            conn,
+            &mut *guard,
+            socket_addr.ip(),
+            tcp.local_addr()?.ip(),
+        )
+        .await?;
+    }
 
     Ok(())
 }
 
-struct Established {}
-struct Closing {}
+async fn tokio_read_pdu_header(tcp: &mut TcpStream) -> Result<PduHeader> {
+    let mut buffer = [0u8; 6];
 
-/// DICOM upper layer connection state 2 (Sta2).
-///
-/// Waiting for A-ASSOCIATE-RQ PDU from client.
-struct Waiting {
-    client_address: IpAddr
-}
+    let n = tcp.peek(&mut buffer).await?;
 
-/// DICOM upper layer connection.
-/// The DICOM standard defines different states for the system. Different states transition differently
-/// depending on performed actions.
-///
-/// See [DICOM standard part 8](https://dicom.nema.org/medical/dicom/current/output/html/part08).
-struct UpperLayerConnection<S, U: UpperLayerServiceUser> {
-    stream: TcpStream,
-    service_user: Arc<Mutex<U>>,
-    state_data: S,
-}
-
-impl<U: UpperLayerServiceUser> UpperLayerConnection<Waiting, U> {
-    pub fn from_tcp_stream(stream: TcpStream, mut client_address: IpAddr, service_user: Arc<Mutex<U>>) -> Self {
-        Self {
-            stream,
-            service_user,
-            state_data: Waiting {client_address},
-        }
-    }
-
-    /// Wait for incoming A-ASSOCIATE-RQ PDU.
-    pub async fn listen_for_request(mut self) -> Result<AssociationResult> {
-        // Read DICOM header
-        let mut buffer = [0u8; 6];
-
-        let n = self.stream.peek(&mut buffer).await?;
-
-        let mut cursor = Cursor::new(buffer);
-        let header = read_pdu_header(&mut cursor)?;
-
-        match header.pdu_type {
-            PduType::AssociateRequest => {
-                // Read entire PDU
-                let mut buffer = vec![0u8; n + header.length as usize];
-
-                let n = self.stream.read_exact(&mut buffer).await?;
-
-                let mut cursor = Cursor::new(buffer);
-
-                let indication = issue_indication(
-                    &mut cursor,
-                    self.state_data.client_address,
-                    self.stream.local_addr()?.ip()
-                )?;
-
-                {
-                    let mut guard = self.service_user.lock().await;
-
-                    guard.handle_associate_request(indication).await;
-                }
-
-                todo!()
-            }
-            _ => return Err("Invalid PDU type".into()),
-        }
-    }
+    let mut cursor = Cursor::new(buffer);
+    read_pdu_header(&mut cursor)
 }

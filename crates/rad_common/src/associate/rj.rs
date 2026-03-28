@@ -2,19 +2,19 @@ use crate::pdu::PduType;
 
 pub enum RejectResult {
     Permanent,
-    Transient
+    Transient,
 }
 
 pub enum RejectSource {
     ServiceUser,
     Acse,
-    Presentation
+    Presentation,
 }
 
 pub enum RejectReason {
     ServiceUser(ServiceUserReason),
     Acse(AcseReason),
-    Presentation(PresentationReason)
+    Presentation(PresentationReason),
 }
 
 pub enum ServiceUserReason {
@@ -31,7 +31,7 @@ pub enum AcseReason {
 
 pub enum PresentationReason {
     TemporaryCongestion,
-    LocalLimitExceeded
+    LocalLimitExceeded,
 }
 
 struct AssociateRjPdu {

@@ -1,14 +1,14 @@
-mod rq_ac;
 mod abort;
 pub mod rj;
+mod rq_ac;
 mod user_information;
 
-pub use rq_ac::*;
 pub use abort::*;
+pub use rq_ac::*;
 pub use user_information::*;
 
-use rj::{RejectReason, RejectResult, RejectSource, AcseReason};
 use crate::Result;
+use rj::{AcseReason, RejectReason, RejectResult, RejectSource};
 
 fn service_provider_rq_pdu_validation(pdu: &AssociateRqAcPdu) -> Result<Option<AssociationResult>> {
     let source = RejectSource::Acse;
@@ -17,8 +17,8 @@ fn service_provider_rq_pdu_validation(pdu: &AssociateRqAcPdu) -> Result<Option<A
         return Ok(Some(AssociationResult::Rejected {
             result: RejectResult::Transient,
             source,
-            reason: RejectReason::Acse(AcseReason::ProtocolNotSupported)
-        }))
+            reason: RejectReason::Acse(AcseReason::ProtocolNotSupported),
+        }));
     }
 
     todo!();
@@ -26,6 +26,10 @@ fn service_provider_rq_pdu_validation(pdu: &AssociateRqAcPdu) -> Result<Option<A
 
 pub enum AssociationResult {
     Accepted,
-    Rejected { result: RejectResult, source: RejectSource, reason: RejectReason },
+    Rejected {
+        result: RejectResult,
+        source: RejectSource,
+        reason: RejectReason,
+    },
     Abort,
 }

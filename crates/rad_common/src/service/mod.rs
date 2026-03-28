@@ -1,7 +1,10 @@
 use std::net::IpAddr;
 
 use crate::Result;
-use crate::associate::{AssociateRqAcPdu, PresentationContextItem, UserInformationSubItem, UserInformation, MaximumLength};
+use crate::associate::{
+    AssociateRqAcPdu, MaximumLength, PresentationContextItem, UserInformation,
+    UserInformationSubItem,
+};
 
 pub struct AssociateRequestIndication {
     pub context_name: String,
@@ -23,19 +26,13 @@ impl AssociateRequestIndication {
         let presentation_context = pdu
             .presentation_context_items()
             .iter()
-            .map(|item|
-                PresentationContextDefinitionList::from_presentation_context_item(item)
-            )
+            .map(|item| PresentationContextDefinitionList::from_presentation_context_item(item))
             .collect();
-
-
 
         let user_information = pdu
             .user_information()
             .iter()
-            .map(|item|
-                item.inner().clone()
-            )
+            .map(|item| item.inner().clone())
             .collect();
 
         Self {
@@ -66,7 +63,7 @@ impl PresentationContextDefinitionList {
                 .transfer_syntax()
                 .iter()
                 .map(|s| s.to_string())
-                .collect()
+                .collect(),
         }
     }
 }

@@ -5,8 +5,8 @@ use std::str::FromStr;
 use std::string::String;
 
 use crate::Result;
-use crate::pdu::{PDU_LENGTH_LENGTH, PDU_TYPE_LENGTH, PduType, read_padding, vec8_add_padding};
 use crate::associate::{MaximumLength, UserInformation};
+use crate::pdu::{PDU_LENGTH_LENGTH, PDU_TYPE_LENGTH, PduType, read_padding, vec8_add_padding};
 
 /// Length of the Protocol Version field in a A-ASSOCIATE-RQ or A-ASSOCIATE-AC PDU
 const PROTOCOL_VERSION_LENGTH: usize = 2;
@@ -264,7 +264,8 @@ pub fn deserialize_association_pdu<T: Read>(reader: &mut T) -> Result<AssociateR
 
             AssociationItemType::PresentationContextAc
             | AssociationItemType::PresentationContextRq => {
-                presentation_context_items.push(deserialize_presentation_context_item(&mut reader)?);
+                presentation_context_items
+                    .push(deserialize_presentation_context_item(&mut reader)?);
             }
 
             AssociationItemType::UserInformation => {
@@ -277,7 +278,6 @@ pub fn deserialize_association_pdu<T: Read>(reader: &mut T) -> Result<AssociateR
         }
     }
 
-
     Ok(AssociateRqAcPdu {
         pdu_type: pdu_type[0].try_into()?,
         length: u32::from_be_bytes(pdu_length),
@@ -286,7 +286,7 @@ pub fn deserialize_association_pdu<T: Read>(reader: &mut T) -> Result<AssociateR
         calling_ae: String::from_utf8(calling_ae.trim_ascii().to_vec())?,
         application_context_item: application_context_item.unwrap(),
         presentation_context_items,
-        user_info_item: user_info_item.unwrap()
+        user_info_item: user_info_item.unwrap(),
     })
 }
 
@@ -365,7 +365,8 @@ impl PresentationContextItem {
         // Presentation context length without variable fields is 4
         let mut length = PRESENTATION_CONTEXT_ITEM_NO_VARIABLE_FIELDS_LENGTH;
 
-        let abstract_syntax_item = SyntaxItem::new(AssociationItemType::AbstractSyntax, abstract_syntax);
+        let abstract_syntax_item =
+            SyntaxItem::new(AssociationItemType::AbstractSyntax, abstract_syntax);
 
         length += abstract_syntax_item.item_length() as u16;
 
@@ -403,8 +404,7 @@ impl PresentationContextItem {
     }
 
     pub fn transfer_syntax(&self) -> Vec<&str> {
-        self
-            .transfer_syntax_items
+        self.transfer_syntax_items
             .iter()
             .map(|item| item.syntax())
             .collect()
@@ -513,7 +513,9 @@ fn serialize_presentation_context_item(item: &PresentationContextItem) -> Result
 /// Deserialize [PresentationContextItem] from a reader.
 /// DICOM standard expects the Abstract Syntax Item to be before the Transfer Syntax Item.
 /// [deserialize_presentation_context_item] does not handle correct ordering.
-fn deserialize_presentation_context_item<T: Read>(reader: &mut T) -> Result<PresentationContextItem> {
+fn deserialize_presentation_context_item<T: Read>(
+    reader: &mut T,
+) -> Result<PresentationContextItem> {
     let mut pdu_type = [0u8; PDU_TYPE_LENGTH];
     reader.read_exact(&mut pdu_type)?;
 
@@ -538,9 +540,9 @@ fn deserialize_presentation_context_item<T: Read>(reader: &mut T) -> Result<Pres
     let mut transfer_syntax_items: Vec<SyntaxItem> = Vec::new();
 
     // Split reader into subreader which is expected to contain the rest of the contents presentation context item contents.
-    let mut syntax_reader = BufReader::new(reader.take(
-        (item_length - PRESENTATION_CONTEXT_ITEM_NO_VARIABLE_FIELDS_LENGTH) as u64
-    ));
+    let mut syntax_reader = BufReader::new(
+        reader.take((item_length - PRESENTATION_CONTEXT_ITEM_NO_VARIABLE_FIELDS_LENGTH) as u64),
+    );
 
     while !syntax_reader.fill_buf()?.is_empty() {
         let next_type = next_byte_item_type(
@@ -571,7 +573,7 @@ fn deserialize_presentation_context_item<T: Read>(reader: &mut T) -> Result<Pres
         context_id: context_id[0],
         result: result[0].try_into().ok(),
         abstract_syntax_item,
-        transfer_syntax_items
+        transfer_syntax_items,
     })
 }
 
@@ -620,9 +622,12 @@ impl UserInfoItem {
         let mut sub_items: Vec<UserInformationSubItem> = Vec::new();
 
         // Mandatory Maximum Length Sub-Item
-        sub_items.push(UserInformationSubItem::new(0x51, UserInformation::MaximumLength(
-            MaximumLength{ maximum_length: 300 }
-        )));
+        sub_items.push(UserInformationSubItem::new(
+            0x51,
+            UserInformation::MaximumLength(MaximumLength {
+                maximum_length: 300,
+            }),
+        ));
 
         length += sub_items.iter().map(|item| item.item_length()).sum::<u32>();
 
@@ -670,16 +675,12 @@ fn deserialize_user_info_item<T: Read>(reader: &mut T) -> Result<UserInfoItem> {
     let length = u16::from_be_bytes(item_length);
 
     // Split reader into subreader which is expected to contain the rest of the contents presentation context item contents.
-    let mut sub_item_reader = BufReader::new(reader.take(
-        length as u64
-    ));
+    let mut sub_item_reader = BufReader::new(reader.take(length as u64));
 
     let mut sub_items: Vec<UserInformationSubItem> = Vec::new();
 
     while !sub_item_reader.fill_buf()?.is_empty() {
-        sub_items.push(
-            deserialize_sub_item(&mut sub_item_reader)?
-        );
+        sub_items.push(deserialize_sub_item(&mut sub_item_reader)?);
     }
 
     Ok(UserInfoItem {
@@ -701,7 +702,7 @@ impl UserInformationSubItem {
             item_type,
             length: match inner {
                 UserInformation::MaximumLength(_) => 4,
-                _ => 2
+                _ => 2,
             },
             inner,
         }
@@ -757,14 +758,16 @@ fn deserialize_sub_item<T: Read>(reader: &mut T) -> Result<UserInformationSubIte
         inner: match item_type {
             0x51 => {
                 // TODO: Figure out how to make expect look better
-                let arr: [u8; 4] = value[..4].try_into().expect("slice must be exactly 4 bytes");
+                let arr: [u8; 4] = value[..4]
+                    .try_into()
+                    .expect("slice must be exactly 4 bytes");
                 let maximum_length = u32::from_be_bytes(arr);
                 UserInformation::MaximumLength(MaximumLength { maximum_length })
             }
             _ => {
                 todo!();
             }
-        }
+        },
     })
 }
 
