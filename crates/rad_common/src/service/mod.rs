@@ -2,7 +2,7 @@ use std::net::IpAddr;
 
 use crate::Result;
 use crate::associate::{
-    AssociateRqAcPdu, MaximumLength, PresentationContextItem, UserInformation,
+    AssociateRqAcPdu, MaximumLength, presentation_context::PresentationContextItem, UserInformation,
     UserInformationSubItem,
 };
 
