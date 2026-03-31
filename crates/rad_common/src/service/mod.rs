@@ -1,6 +1,8 @@
 use std::net::IpAddr;
 
 use crate::Result;
+use crate::associate::RejectedAssociationResult;
+use crate::associate::rj::ServiceUserReason;
 use crate::associate::{
     AssociateRqAcPdu, MaximumLength, presentation_context::PresentationContextItem, UserInformation,
     UserInformationSubItem,
@@ -65,5 +67,32 @@ impl PresentationContextDefinitionList {
                 .map(|s| s.to_string())
                 .collect(),
         }
+    }
+}
+
+pub enum AssociateRequestResponse {
+    Accepted(AcceptedAssociateRequestResponse),
+    Rejected(RejectedAssociateRequestResponse)
+}
+
+pub struct AcceptedAssociateRequestResponse {
+    pub context_name: String,
+    pub called_ae: String,
+    pub calling_ae: String,
+    pub user_information: Vec<UserInformation>,
+    pub presentation_context_result: Vec<PresentationContextDefinitionList>,
+}
+
+pub struct RejectedAssociateRequestResponse {
+    pub diagnostic: Option<ServiceUserReason>,
+    pub result: RejectedAssociationResult
+}
+
+impl RejectedAssociateRequestResponse {
+    pub fn new(
+        diagnostic: Option<ServiceUserReason>,
+        result: RejectedAssociationResult,
+    ) -> Self {
+        Self { diagnostic, result }
     }
 }

@@ -18,7 +18,7 @@ async fn main() -> Result<()> {
     let mut stream = TcpStream::connect("127.0.0.1:104").await?;
     println!("Connected to server");
 
-    let pdu = AssociateRqAcPdu::new_rq("test1", "rad")?;
+    let pdu = AssociateRqAcPdu::new_rq("rad", "test1")?;
 
     let mut writer = BufWriter::new(stream);
 

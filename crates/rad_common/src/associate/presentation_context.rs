@@ -1,4 +1,7 @@
-use crate::{associate::AssociationItemType, Result};
+use std::io::{BufRead, BufReader, Read};
+
+use crate::{associate::{AssociationItemType, ITEM_LENGTH_LENGTH, CONTEXT_ID_LENGTH, RESULT_LENGTH, next_byte_item_type}, Result};
+use crate::pdu::{PDU_LENGTH_LENGTH, PDU_TYPE_LENGTH, PduType, read_padding, vec8_add_padding};
 
 /// Length of the presentation context item without the variable field.
 pub const PRESENTATION_CONTEXT_ITEM_NO_VARIABLE_FIELDS_LENGTH: u16 = 4;
@@ -7,19 +10,19 @@ pub struct PresentationContextItem {
     pub item_type: AssociationItemType,
     pub length: u16,
     pub context_id: u8,
-    pub result: Option<AssociateResult>,
+    pub result: Option<PresentationContextResult>,
     pub abstract_syntax_item: Option<SyntaxItem>,
     pub transfer_syntax_items: Vec<SyntaxItem>,
 }
 
 impl PresentationContextItem {
-    pub fn new(item_type: AssociationItemType, context_id: u8, result: Option<AssociateResult>, abstract_syntax_item: Option<SyntaxItem>, transfer_syntax_items: Vec<SyntaxItem>) -> Result<Self> {
+    pub fn new(item_type: AssociationItemType, context_id: u8, result: Option<PresentationContextResult>, abstract_syntax_item: Option<SyntaxItem>, transfer_syntax_items: Vec<SyntaxItem>) -> Result<Self> {
         match item_type {
             AssociationItemType::PresentationContextRq => {
                 Ok(PresentationContextItem::new_rq(context_id, abstract_syntax_item.unwrap(), transfer_syntax_items))
             }
             AssociationItemType::PresentationContextAc => {
-                todo!()
+                Ok(PresentationContextItem::new_ac(context_id, result.unwrap(), abstract_syntax_item.unwrap(), transfer_syntax_items))
             }
             _ => {
                 return Err("Invalid type".into())
@@ -47,8 +50,22 @@ impl PresentationContextItem {
         }
     }
 
-    fn new_ac(result: AssociateResult) -> Self {
-        todo!();
+    fn new_ac(context_id: u8, result: PresentationContextResult, abstract_syntax_item: SyntaxItem, transfer_syntax_items: Vec<SyntaxItem>) -> Self {
+        // Presentation context length without variable fields is 4
+        let mut length = PRESENTATION_CONTEXT_ITEM_NO_VARIABLE_FIELDS_LENGTH;
+
+        length += abstract_syntax_item.item_length() as u16;
+
+        length += transfer_syntax_items[0].item_length() as u16;
+
+        Self {
+            item_type: AssociationItemType::PresentationContextRq,
+            length,
+            context_id,
+            result: None,
+            abstract_syntax_item: Some(abstract_syntax_item),
+            transfer_syntax_items,
+        }
     }
 
     pub fn item_length(&self) -> u32 {
@@ -71,7 +88,7 @@ impl PresentationContextItem {
 
 #[derive(Clone, Copy)]
 #[repr(u8)]
-pub enum AssociateResult {
+pub enum PresentationContextResult {
     Acceptance,
     UserRejection,
     NoReason,
@@ -79,14 +96,14 @@ pub enum AssociateResult {
     TransferSyntaxesNotSupported,
 }
 
-impl TryFrom<u8> for AssociateResult {
+impl TryFrom<u8> for PresentationContextResult {
     type Error = crate::Error;
 
     fn try_from(value: u8) -> Result<Self> {
         match value {
-            0x00 => Ok(AssociateResult::Acceptance),
-            0x01 => Ok(AssociateResult::UserRejection),
-            0x02 => Ok(AssociateResult::NoReason),
+            0x00 => Ok(PresentationContextResult::Acceptance),
+            0x01 => Ok(PresentationContextResult::UserRejection),
+            0x02 => Ok(PresentationContextResult::NoReason),
             0x03 => Ok(Self::AbstractSyntaxNotSupported),
             0x04 => Ok(Self::TransferSyntaxesNotSupported),
             _ => Err("Invalid valie".into()),
@@ -94,14 +111,14 @@ impl TryFrom<u8> for AssociateResult {
     }
 }
 
-impl From<AssociateResult> for u8 {
-    fn from(value: AssociateResult) -> Self {
+impl From<PresentationContextResult> for u8 {
+    fn from(value: PresentationContextResult) -> Self {
         match value {
-            AssociateResult::Acceptance => 0x00,
-            AssociateResult::UserRejection => 0x01,
-            AssociateResult::NoReason => 0x02,
-            AssociateResult::AbstractSyntaxNotSupported => 0x03,
-            AssociateResult::TransferSyntaxesNotSupported => 0x04,
+            PresentationContextResult::Acceptance => 0x00,
+            PresentationContextResult::UserRejection => 0x01,
+            PresentationContextResult::NoReason => 0x02,
+            PresentationContextResult::AbstractSyntaxNotSupported => 0x03,
+            PresentationContextResult::TransferSyntaxesNotSupported => 0x04,
         }
     }
 }
@@ -139,7 +156,7 @@ impl SyntaxItem {
 pub struct PresentationContextItemBuilder {
     item_type: Option<AssociationItemType>,
     context_id: Option<u8>,
-    result: Option<AssociateResult>,
+    result: Option<PresentationContextResult>,
     abstract_syntax_item: Option<SyntaxItem>,
     transfer_syntax_items: Vec<SyntaxItem>,
 }
@@ -165,7 +182,7 @@ impl PresentationContextItemBuilder {
         self
     }
 
-    pub fn result(mut self, result: AssociateResult) -> Self {
+    pub fn result(mut self, result: PresentationContextResult) -> Self {
         self.result = Some(result);
         self
     }
@@ -216,4 +233,124 @@ impl SyntaxItemBuilder {
     pub fn build(self) -> Result<SyntaxItem> {
         Ok(SyntaxItem::new(self.item_type.unwrap(), &self.syntax.unwrap()))
     }
+}
+
+pub(crate) fn serialize_presentation_context_item(item: &PresentationContextItem) -> Result<Vec<u8>> {
+    let mut pdu: Vec<u8> = Vec::new();
+
+    pdu.push(item.item_type.into());
+
+    vec8_add_padding(&mut pdu, 1);
+
+    pdu.extend_from_slice(&item.length.to_be_bytes());
+    pdu.push(item.context_id);
+
+    vec8_add_padding(&mut pdu, 1);
+
+    // Add result if it exists
+    if let Some(result) = item.result.clone() {
+        pdu.push(result.into());
+    } else {
+        pdu.push(0xff);
+    }
+
+    vec8_add_padding(&mut pdu, 1);
+
+    if let Some(item) = &item.abstract_syntax_item {
+        pdu.extend(serialize_syntax_item(&item)?);
+    }
+
+    for item in item.transfer_syntax_items.iter() {
+        pdu.extend(serialize_syntax_item(&item)?);
+    }
+
+    Ok(pdu)
+}
+
+/// Deserialize [PresentationContextItem] from a reader.
+/// DICOM standard expects the Abstract Syntax Item to be before the Transfer Syntax Item.
+/// [deserialize_presentation_context_item] does not handle correct ordering.
+pub(crate) fn deserialize_presentation_context_item<T: Read>(
+    reader: &mut T,
+) -> Result<PresentationContextItem> {
+    let mut pdu_type = [0u8; PDU_TYPE_LENGTH];
+    reader.read_exact(&mut pdu_type)?;
+
+    read_padding(reader, 1);
+
+    let mut item_length = [0u8; ITEM_LENGTH_LENGTH];
+    reader.read_exact(&mut item_length)?;
+
+    let item_length = u16::from_be_bytes(item_length);
+
+    let mut context_id = [0u8; CONTEXT_ID_LENGTH];
+    reader.read_exact(&mut context_id)?;
+
+    read_padding(reader, 1);
+
+    let mut result = [0u8; RESULT_LENGTH];
+    reader.read_exact(&mut result)?;
+
+    read_padding(reader, 1);
+
+    let mut abstract_syntax_item: Option<SyntaxItem> = None;
+    let mut transfer_syntax_items: Vec<SyntaxItem> = Vec::new();
+
+    // Split reader into subreader which is expected to contain the rest of the contents presentation context item contents.
+    let mut syntax_reader = BufReader::new(
+        reader.take((item_length - PRESENTATION_CONTEXT_ITEM_NO_VARIABLE_FIELDS_LENGTH) as u64),
+    );
+
+    while !syntax_reader.fill_buf()?.is_empty() {
+        let next_type = next_byte_item_type(
+            syntax_reader
+                .fill_buf()?
+                .first()
+                .copied()
+                .ok_or_else(|| "Invalid item type".to_string())?,
+        )?;
+
+        match next_type {
+            AssociationItemType::AbstractSyntax => {
+                abstract_syntax_item = Some(deserialize_syntax_item(&mut syntax_reader)?);
+            }
+            AssociationItemType::TransferSyntax => {
+                transfer_syntax_items.push(deserialize_syntax_item(&mut syntax_reader)?);
+            }
+
+            _ => {
+                return Err("Invalid item type".into());
+            }
+        }
+    }
+
+    PresentationContextItem::new(pdu_type[0].try_into()?, context_id[0], result[0].try_into().ok(), abstract_syntax_item, transfer_syntax_items)
+}
+
+pub(crate) fn serialize_syntax_item(item: &SyntaxItem) -> Result<Vec<u8>> {
+    let mut pdu: Vec<u8> = Vec::new();
+
+    pdu.push(item.item_type.into());
+    vec8_add_padding(&mut pdu, 1);
+    pdu.extend_from_slice(&item.length.to_be_bytes());
+    pdu.extend_from_slice(&item.syntax().as_bytes());
+
+    Ok(pdu)
+}
+
+pub(crate) fn deserialize_syntax_item<T: Read>(reader: &mut T) -> Result<SyntaxItem> {
+    let mut pdu_type = [0u8; PDU_TYPE_LENGTH];
+    reader.read_exact(&mut pdu_type)?;
+
+    read_padding(reader, 1);
+
+    let mut item_length = [0u8; ITEM_LENGTH_LENGTH];
+    reader.read_exact(&mut item_length)?;
+
+    let length = u16::from_be_bytes(item_length);
+
+    let mut syntax = vec![0u8; length as usize];
+    reader.read_exact(&mut syntax)?;
+
+    Ok(SyntaxItem::new(pdu_type[0].try_into()?, &String::from_utf8(syntax)?))
 }

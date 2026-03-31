@@ -3,11 +3,10 @@ use async_trait::async_trait;
 use std::collections::HashMap;
 
 use rad_common::{
-    associate::AssociationResult,
-    associate::rj::{
-        AcseReason, PresentationReason, RejectReason, RejectResult, RejectSource, ServiceUserReason,
-    },
-    service::AssociateRequestIndication,
+    associate::{RejectedAssociationResult, rj::{
+        AcseReason, PresentationReason, RejectReason, RejectSource, ServiceUserReason,
+    }},
+    service::{AcceptedAssociateRequestResponse, AssociateRequestIndication, AssociateRequestResponse, RejectedAssociateRequestResponse},
 };
 
 use eradic_adaptor::UpperLayerServiceUserAsync;
@@ -16,7 +15,7 @@ pub type ApplicationEntityRegistry = HashMap<String, Box<dyn ApplicationEntity>>
 
 trait ApplicationEntity: Send + Sync {
     fn handle_associate_request(&self, indication: AssociateRequestIndication)
-    -> AssociationResult;
+    -> AssociateRequestResponse;
 }
 
 struct Pacs {}
@@ -25,12 +24,14 @@ impl ApplicationEntity for Pacs {
     fn handle_associate_request(
         &self,
         indication: AssociateRequestIndication,
-    ) -> AssociationResult {
-        if indication.context_name != "1.2.840.10008.3.1.1.1" {}
-
-        for presentation_context_item in indication.presentation_context {}
-
-        AssociationResult::Accepted
+    ) -> AssociateRequestResponse {
+        AssociateRequestResponse::Accepted(AcceptedAssociateRequestResponse {
+            context_name: indication.context_name,
+            called_ae: indication.called_ae,
+            calling_ae: indication.calling_ae,
+            user_information: indication.user_information,
+            presentation_context_result: indication.presentation_context
+        })
     }
 }
 
@@ -54,7 +55,7 @@ impl UpperLayerServiceUserAsync for ServiceUser {
     async fn handle_associate_request(
         &mut self,
         indication: AssociateRequestIndication,
-    ) -> AssociationResult {
+    ) -> AssociateRequestResponse {
         let result = self
             .application_entities
             .get(&indication.called_ae)
@@ -62,11 +63,12 @@ impl UpperLayerServiceUserAsync for ServiceUser {
 
         match result {
             Some(result) => result,
-            None => AssociationResult::Rejected {
-                result: RejectResult::Permanent,
-                source: RejectSource::ServiceUser,
-                reason: RejectReason::ServiceUser(ServiceUserReason::CalledAeNotRecognized),
-            },
+            None => {
+                AssociateRequestResponse::Rejected(RejectedAssociateRequestResponse::new(
+                    Some(ServiceUserReason::CalledAeNotRecognized),
+                    RejectedAssociationResult::RejectedPermanent
+                ))
+            }
         }
     }
 }

@@ -2,7 +2,7 @@ mod service_user;
 
 use core::net::SocketAddr;
 use std::collections::HashMap;
-use std::io::Cursor;
+use std::io::{Cursor, BufReader};
 use std::net::IpAddr;
 use std::string::String;
 use std::sync::{
@@ -10,8 +10,11 @@ use std::sync::{
     atomic::{AtomicI64, Ordering},
 };
 
+use eradic_adaptor::PduCommand;
+use rad_common::associate::{AssociateRqAcPdu, serialize_association_pdu};
 use rad_common::pdu::{PDU_HEADER_LENGTH, PduHeader, read_pdu_header};
 
+use rad_common::service::AssociateRequestResponse;
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
     net::{TcpListener, TcpStream},
@@ -19,7 +22,7 @@ use tokio::{
 };
 
 use eradic_adaptor::{
-    UpperLayerServiceUserAsync, association::UpperLayerConnection, handle_pdu_with_state_async,
+    UpperLayerServiceUserAsync, association::UpperLayerConnection, handle_incoming_pdu_async,
 };
 
 use crate::service_user::ServiceUser;
@@ -76,7 +79,7 @@ async fn handle_client<U: UpperLayerServiceUserAsync>(
         let mut cursor = Cursor::new(buffer);
 
         let mut guard = service_user.lock().await;
-        conn = handle_pdu_with_state_async(
+        let (new_conn, command) = handle_incoming_pdu_async(
             &mut cursor,
             conn,
             &mut *guard,
@@ -84,9 +87,15 @@ async fn handle_client<U: UpperLayerServiceUserAsync>(
             tcp.local_addr()?.ip(),
         )
         .await?;
-    }
 
-    Ok(())
+        match command {
+            PduCommand::AssociationResponse(response) => {
+                handle_association_response(response, &mut tcp).await?;
+            }
+        }
+
+        conn = new_conn;
+    }
 }
 
 async fn tokio_read_pdu_header(tcp: &mut TcpStream) -> Result<PduHeader> {
@@ -96,4 +105,21 @@ async fn tokio_read_pdu_header(tcp: &mut TcpStream) -> Result<PduHeader> {
 
     let mut cursor = Cursor::new(buffer);
     read_pdu_header(&mut cursor)
+}
+
+async fn handle_association_response(response: AssociateRequestResponse, tcp: &mut TcpStream) -> Result<()> {
+    match response {
+        AssociateRequestResponse::Accepted(inner) => {
+            let pdu = AssociateRqAcPdu::new_ac(&inner.called_ae, &inner.calling_ae)?;
+
+            tcp
+                .write_all(serialize_association_pdu(&pdu)?.as_slice())
+                .await?;
+            todo!();
+        }
+        AssociateRequestResponse::Rejected(inner) => {
+            println!("test");
+            todo!();
+        }
+    }
 }

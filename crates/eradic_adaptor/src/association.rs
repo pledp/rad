@@ -1,9 +1,9 @@
 use std::net::IpAddr;
 
 use rad_common::{
-    associate::{AssociateRqAcPdu, AssociationResult},
+    associate::AssociateRqAcPdu,
     pdu::{PDU_HEADER_LENGTH, PduHeader, PduType, read_pdu_header},
-    service::AssociateRequestIndication,
+    service::{AssociateRequestIndication, AssociateRequestResponse},
 };
 
 use crate::{Error, Result, issue_indication_from_pdu};
@@ -16,6 +16,8 @@ use crate::{Error, Result, issue_indication_from_pdu};
 pub enum UpperLayerConnection {
     WaitingForRequestPdu(WaitingForRequestPdu),
     WaitingForResponsePrimitive(WaitingForResponsePrimitive),
+    DataTransfer(DataTransfer),
+    WaitForTcpClose
 }
 
 impl UpperLayerConnection {
@@ -54,13 +56,16 @@ impl WaitingForResponsePrimitive {
         Self {}
     }
 
-    pub fn handle_response_primitive(self) -> ResponsePrimitiveResultState {
-        ResponsePrimitiveResultState::DataTransfer(DataTransfer {})
+    pub fn handle_response_primitive(self, response: &AssociateRequestResponse) -> Option<DataTransfer> {
+        match response {
+            AssociateRequestResponse::Accepted(inner) => {
+                Some(DataTransfer {})
+            },
+            AssociateRequestResponse::Rejected(inner) => {
+                None
+            }
+        }
     }
-}
-
-pub enum ResponsePrimitiveResultState {
-    DataTransfer(DataTransfer),
 }
 
 pub struct DataTransfer {}

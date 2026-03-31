@@ -1,12 +1,10 @@
-use std::convert::TryFrom;
 use std::fmt;
 use std::io::{BufRead, BufReader, Read};
-use std::str::FromStr;
 use std::string::String;
 
 use crate::Result;
-use crate::associate::presentation_context::SyntaxItemBuilder;
-use crate::associate::{MaximumLength, UserInformation, presentation_context::{PresentationContextItem, PRESENTATION_CONTEXT_ITEM_NO_VARIABLE_FIELDS_LENGTH, SyntaxItem, PresentationContextItemBuilder}};
+use crate::associate::presentation_context::{SyntaxItemBuilder, PresentationContextResult, serialize_presentation_context_item, deserialize_presentation_context_item};
+use crate::associate::{ITEM_LENGTH_LENGTH, next_byte_item_type, AssociationItemType, MaximumLength, UserInformation, presentation_context::{PresentationContextItem, PresentationContextItemBuilder}};
 use crate::pdu::{PDU_LENGTH_LENGTH, PDU_TYPE_LENGTH, PduType, read_padding, vec8_add_padding};
 
 /// Length of the Protocol Version field in a A-ASSOCIATE-RQ or A-ASSOCIATE-AC PDU
@@ -14,15 +12,6 @@ const PROTOCOL_VERSION_LENGTH: usize = 2;
 
 /// Length of the Called-AE and Calling-AE fields in a A-ASSOCIATE-RQ or A-ASSOCIATE-AC PDU
 const AE_LENGTH: usize = 16;
-
-/// Length of the Item length field.
-const ITEM_LENGTH_LENGTH: usize = 2;
-
-/// Length of the Presentation Context ID field of the Presentation Context Item.
-const CONTEXT_ID_LENGTH: usize = 1;
-
-/// Length of the Result/Reason field.
-const RESULT_LENGTH: usize = 1;
 
 /// Length of sub-items without the variable field.
 const SUB_ITEM_NO_VARIABLE_FIELDS_LENGTH: u16 = 4;
@@ -58,46 +47,6 @@ impl fmt::Display for Error {
 }
 
 impl std::error::Error for Error {}
-
-#[derive(Clone, Copy, PartialEq, Eq)]
-#[repr(u8)]
-pub enum AssociationItemType {
-    ApplicationContext,
-    PresentationContextRq,
-    PresentationContextAc,
-    UserInformation,
-    AbstractSyntax,
-    TransferSyntax,
-}
-
-impl TryFrom<u8> for AssociationItemType {
-    type Error = crate::associate::Error;
-
-    fn try_from(value: u8) -> std::result::Result<Self, Error> {
-        match value {
-            0x10 => Ok(AssociationItemType::ApplicationContext),
-            0x20 => Ok(AssociationItemType::PresentationContextRq),
-            0x21 => Ok(AssociationItemType::PresentationContextAc),
-            0x30 => Ok(AssociationItemType::AbstractSyntax),
-            0x40 => Ok(AssociationItemType::TransferSyntax),
-            0x50 => Ok(AssociationItemType::UserInformation),
-            _ => Err(Error::InvalidValue),
-        }
-    }
-}
-
-impl From<AssociationItemType> for u8 {
-    fn from(value: AssociationItemType) -> Self {
-        match value {
-            AssociationItemType::ApplicationContext => 0x10,
-            AssociationItemType::PresentationContextRq => 0x20,
-            AssociationItemType::PresentationContextAc => 0x21,
-            AssociationItemType::AbstractSyntax => 0x30,
-            AssociationItemType::TransferSyntax => 0x40,
-            AssociationItemType::UserInformation => 0x50,
-        }
-    }
-}
 
 pub struct AssociateRqAcPdu {
     pub pdu_type: PduType,
@@ -161,6 +110,59 @@ impl AssociateRqAcPdu {
         })
     }
 
+    pub fn new_ac(called_ae: &str, calling_ae: &str) -> Result<Self> {
+        // 68 is the length of the A-ASSOCIATE-RQ/AC PDU minus the variable fields
+        const NO_VARIABLE_FIELDS_LENGTH: u32 = 68;
+        let mut length = NO_VARIABLE_FIELDS_LENGTH;
+
+        let application_context_item = ApplicationContextItem::new();
+        length += application_context_item.item_length();
+
+        let mut presentation_context_items: Vec<PresentationContextItem> = Vec::new();
+
+        presentation_context_items.push(
+            PresentationContextItemBuilder::new()
+                .item_type(AssociationItemType::PresentationContextAc)
+                .context_id(1)
+                .result(PresentationContextResult::Acceptance)
+                .abstract_syntax_item(SyntaxItemBuilder::new()
+                    .item_type(AssociationItemType::AbstractSyntax)
+                    .syntax("1.2.840.10008.1.1")
+                    .build()?
+                )
+                .add_transfer_syntax(SyntaxItemBuilder::new()
+                    .item_type(AssociationItemType::TransferSyntax)
+                    .syntax("1.2.840.10008.1.2")
+                    .build()?
+                )
+                .build()?
+        );
+
+        length += presentation_context_items
+            .iter()
+            .map(|item| item.item_length())
+            .sum::<u32>();
+
+        let user_info_item = UserInfoItem::new();
+
+        length += user_info_item.item_length();
+
+        Ok(Self {
+            pdu_type: PduType::AssociateAccept,
+            length,
+            protocol_version: 1,
+            called_ae: called_ae.into(),
+            calling_ae: calling_ae.into(),
+            application_context_item,
+            presentation_context_items,
+            user_info_item,
+        })
+    }
+
+    pub fn pdu_type(&self) -> PduType {
+        self.pdu_type
+    }
+
     pub fn context_name(&self) -> &str {
         self.application_context_item.context_name()
     }
@@ -186,7 +188,7 @@ impl AssociateRqAcPdu {
 pub fn serialize_association_pdu(request: &AssociateRqAcPdu) -> Result<Vec<u8>> {
     let mut pdu: Vec<u8> = Vec::new();
 
-    pdu.push(0x01);
+    pdu.push(request.pdu_type.into());
 
     vec8_add_padding(&mut pdu, 1);
 
@@ -196,18 +198,21 @@ pub fn serialize_association_pdu(request: &AssociateRqAcPdu) -> Result<Vec<u8>> 
     vec8_add_padding(&mut pdu, 2);
 
     // Called application entity, add 0x20 as padding
-    let ae = request.called_ae.as_bytes();
+    let ae = request.called_ae().as_bytes();
     let len = ae.len().min(16);
 
     pdu.extend_from_slice(&ae[..len]);
     pdu.extend(std::iter::repeat(0x20).take(16 - len));
+
+
 
     // Calling application entity
-    let ae = request.calling_ae.as_bytes();
+    let ae = request.calling_ae().as_bytes();
     let len = ae.len().min(16);
 
     pdu.extend_from_slice(&ae[..len]);
     pdu.extend(std::iter::repeat(0x20).take(16 - len));
+
 
     vec8_add_padding(&mut pdu, 32);
 
@@ -245,7 +250,7 @@ pub fn deserialize_association_pdu<T: Read>(reader: &mut T) -> Result<AssociateR
     reader.read_exact(&mut called_ae)?;
 
     let mut calling_ae = [0u8; AE_LENGTH];
-    reader.read_exact(&mut called_ae)?;
+    reader.read_exact(&mut calling_ae)?;
 
     read_padding(&mut reader, 32);
 
@@ -285,6 +290,7 @@ pub fn deserialize_association_pdu<T: Read>(reader: &mut T) -> Result<AssociateR
         }
     }
 
+    // TODO: Handle Some for called_ae and calling_ae
     Ok(AssociateRqAcPdu {
         pdu_type: pdu_type[0].try_into()?,
         length: u32::from_be_bytes(pdu_length),
@@ -356,126 +362,6 @@ fn deserialize_application_context_item<T: Read>(reader: &mut T) -> Result<Appli
         length,
         context_name: String::from_utf8(context_name)?,
     })
-}
-
-fn serialize_presentation_context_item(item: &PresentationContextItem) -> Result<Vec<u8>> {
-    let mut pdu: Vec<u8> = Vec::new();
-
-    pdu.push(item.item_type.into());
-
-    vec8_add_padding(&mut pdu, 1);
-
-    pdu.extend_from_slice(&item.length.to_be_bytes());
-    pdu.push(item.context_id);
-
-    vec8_add_padding(&mut pdu, 1);
-
-    // Add result if it exists
-    if let Some(result) = item.result.clone() {
-        pdu.push(result.into());
-    } else {
-        pdu.push(0xff);
-    }
-
-    vec8_add_padding(&mut pdu, 1);
-
-    if let Some(item) = &item.abstract_syntax_item {
-        pdu.extend(serialize_syntax_item(&item)?);
-    }
-
-    for item in item.transfer_syntax_items.iter() {
-        pdu.extend(serialize_syntax_item(&item)?);
-    }
-
-    Ok(pdu)
-}
-
-/// Deserialize [PresentationContextItem] from a reader.
-/// DICOM standard expects the Abstract Syntax Item to be before the Transfer Syntax Item.
-/// [deserialize_presentation_context_item] does not handle correct ordering.
-fn deserialize_presentation_context_item<T: Read>(
-    reader: &mut T,
-) -> Result<PresentationContextItem> {
-    let mut pdu_type = [0u8; PDU_TYPE_LENGTH];
-    reader.read_exact(&mut pdu_type)?;
-
-    read_padding(reader, 1);
-
-    let mut item_length = [0u8; ITEM_LENGTH_LENGTH];
-    reader.read_exact(&mut item_length)?;
-
-    let item_length = u16::from_be_bytes(item_length);
-
-    let mut context_id = [0u8; CONTEXT_ID_LENGTH];
-    reader.read_exact(&mut context_id)?;
-
-    read_padding(reader, 1);
-
-    let mut result = [0u8; RESULT_LENGTH];
-    reader.read_exact(&mut result)?;
-
-    read_padding(reader, 1);
-
-    let mut abstract_syntax_item: Option<SyntaxItem> = None;
-    let mut transfer_syntax_items: Vec<SyntaxItem> = Vec::new();
-
-    // Split reader into subreader which is expected to contain the rest of the contents presentation context item contents.
-    let mut syntax_reader = BufReader::new(
-        reader.take((item_length - PRESENTATION_CONTEXT_ITEM_NO_VARIABLE_FIELDS_LENGTH) as u64),
-    );
-
-    while !syntax_reader.fill_buf()?.is_empty() {
-        let next_type = next_byte_item_type(
-            syntax_reader
-                .fill_buf()?
-                .first()
-                .copied()
-                .ok_or_else(|| "Invalid item type".to_string())?,
-        )?;
-
-        match next_type {
-            AssociationItemType::AbstractSyntax => {
-                abstract_syntax_item = Some(deserialize_syntax_item(&mut syntax_reader)?);
-            }
-            AssociationItemType::TransferSyntax => {
-                transfer_syntax_items.push(deserialize_syntax_item(&mut syntax_reader)?);
-            }
-
-            _ => {
-                return Err("Invalid item type".into());
-            }
-        }
-    }
-
-    PresentationContextItem::new(pdu_type[0].try_into()?, context_id[0], result[0].try_into().ok(), abstract_syntax_item, transfer_syntax_items)
-}
-
-fn serialize_syntax_item(item: &SyntaxItem) -> Result<Vec<u8>> {
-    let mut pdu: Vec<u8> = Vec::new();
-
-    pdu.push(item.item_type.into());
-    vec8_add_padding(&mut pdu, 1);
-    pdu.extend_from_slice(&item.length.to_be_bytes());
-    pdu.extend_from_slice(&item.syntax().as_bytes());
-
-    Ok(pdu)
-}
-
-fn deserialize_syntax_item<T: Read>(reader: &mut T) -> Result<SyntaxItem> {
-    let mut pdu_type = [0u8; PDU_TYPE_LENGTH];
-    reader.read_exact(&mut pdu_type)?;
-
-    read_padding(reader, 1);
-
-    let mut item_length = [0u8; ITEM_LENGTH_LENGTH];
-    reader.read_exact(&mut item_length)?;
-
-    let length = u16::from_be_bytes(item_length);
-
-    let mut syntax = vec![0u8; length as usize];
-    reader.read_exact(&mut syntax)?;
-
-    Ok(SyntaxItem::new(pdu_type[0].try_into()?, &String::from_utf8(syntax)?))
 }
 
 pub struct UserInfoItem {
@@ -638,15 +524,4 @@ fn deserialize_sub_item<T: Read>(reader: &mut T) -> Result<UserInformationSubIte
             }
         },
     })
-}
-
-/// Peek into the next byte and output item type.
-fn next_byte_item_type<T>(item_type: T) -> Result<AssociationItemType>
-where
-    T: TryInto<AssociationItemType>,
-    <T as TryInto<AssociationItemType>>::Error: std::error::Error + Send + Sync + 'static,
-{
-    item_type
-        .try_into()
-        .map_err(|e| Box::new(e) as Box<dyn std::error::Error + Send + Sync>)
 }

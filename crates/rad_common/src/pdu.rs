@@ -15,6 +15,7 @@ pub const PDU_HEADER_LENGTH: usize = 6;
 
 const APPLICATION_CONTEXT_NAME: &'static str = "1.2.840.10008.3.1.1.1";
 
+#[derive(Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]
 pub enum PduType {
     AssociateRequest = 0x01,
@@ -39,6 +40,20 @@ impl TryFrom<u8> for PduType {
             0x06 => Ok(PduType::ReleaseResponse),
             0x07 => Ok(PduType::Abort),
             _ => Err("Invalid type".into()),
+        }
+    }
+}
+
+impl From<PduType> for u8 {
+    fn from(value: PduType) -> Self {
+        match value {
+            PduType::AssociateRequest => 0x01,
+            PduType::AssociateAccept => 0x02,
+            PduType::AssociateReject => 0x03,
+            PduType::Data => 0x04,
+            PduType::ReleaseRequest => 0x05,
+            PduType::ReleaseResponse => 0x06,
+            PduType::Abort => 0x07
         }
     }
 }
