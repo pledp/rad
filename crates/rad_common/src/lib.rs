@@ -2,6 +2,9 @@ pub mod associate;
 pub mod pdu;
 pub mod service;
 pub mod vr;
+pub mod event;
+
+pub use pdu::Pdu;
 
 use std::collections::HashMap;
 use std::fs::File;

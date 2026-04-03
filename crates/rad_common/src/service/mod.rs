@@ -21,8 +21,8 @@ pub struct AssociateRequestIndication {
 impl AssociateRequestIndication {
     pub fn from_rq_pdu(
         pdu: AssociateRqAcPdu,
-        called_address: IpAddr,
-        calling_address: IpAddr,
+        called_address: &IpAddr,
+        calling_address: &IpAddr,
     ) -> Self {
         // Create Vector of [PresentationContextDefinitionList]
         let presentation_context = pdu
@@ -42,8 +42,8 @@ impl AssociateRequestIndication {
             called_ae: pdu.called_ae().to_string(),
             calling_ae: pdu.calling_ae().to_string(),
             user_information,
-            called_address,
-            calling_address,
+            called_address: called_address.clone(),
+            calling_address: calling_address.clone(),
             presentation_context,
         }
     }

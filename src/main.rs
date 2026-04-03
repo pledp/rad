@@ -10,9 +10,9 @@ use std::sync::{
     atomic::{AtomicI64, Ordering},
 };
 
-use eradic_adaptor::PduCommand;
-use rad_common::associate::{AssociateRqAcPdu, serialize_association_pdu};
-use rad_common::pdu::{PDU_HEADER_LENGTH, PduHeader, read_pdu_header};
+use rad_common::associate::{AssociateRqAcPdu, serialize_association_pdu, deserialize_association_pdu};
+use rad_common::pdu::{PDU_HEADER_LENGTH, PduHeader, read_pdu_header, Pdu};
+use rad_common::event::{Event, Command};
 
 use rad_common::service::AssociateRequestResponse;
 use tokio::{
@@ -69,7 +69,7 @@ async fn handle_client<U: UpperLayerServiceUserAsync>(
         socket_addr.port()
     );
 
-    let mut conn = UpperLayerConnection::new();
+    let mut conn = UpperLayerConnection::new(socket_addr.ip(), tcp.local_addr()?.ip());
 
     loop {
         let header = tokio_read_pdu_header(&mut tcp).await?;
@@ -78,23 +78,27 @@ async fn handle_client<U: UpperLayerServiceUserAsync>(
 
         let mut cursor = Cursor::new(buffer);
 
+        let pdu = deserialize_association_pdu(&mut cursor)?;
+
         let mut guard = service_user.lock().await;
-        let (new_conn, command) = handle_incoming_pdu_async(
-            &mut cursor,
-            conn,
+        let command = handle_incoming_pdu_async(
+            Pdu::AssociationRequest(pdu),
+            &mut conn,
             &mut *guard,
-            socket_addr.ip(),
-            tcp.local_addr()?.ip(),
         )
         .await?;
 
         match command {
-            PduCommand::AssociationResponse(response) => {
-                handle_association_response(response, &mut tcp).await?;
+            Some(Command::AssociateAcceptPdu(response)) => {
+                handle_association_response(AssociateRequestResponse::Accepted(response), &mut tcp).await?;
+            }
+            None => {
+                println!("command");
+            }
+            _ => {
+                todo!()
             }
         }
-
-        conn = new_conn;
     }
 }
 

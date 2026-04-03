@@ -14,8 +14,7 @@ use eradic_adaptor::UpperLayerServiceUserAsync;
 pub type ApplicationEntityRegistry = HashMap<String, Box<dyn ApplicationEntity>>;
 
 trait ApplicationEntity: Send + Sync {
-    fn handle_associate_request(&self, indication: AssociateRequestIndication)
-    -> AssociateRequestResponse;
+    fn handle_associate_request(&self, indication: AssociateRequestIndication) -> AssociateRequestResponse;
 }
 
 struct Pacs {}

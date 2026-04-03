@@ -140,10 +140,6 @@ impl SyntaxItem {
 
     pub fn item_length(&self) -> u32 {
         const SYNTAX_ITEM_DEFAULT_LENGTH: u32 = 4;
-        println!(
-            "LENGTH: {}",
-            SYNTAX_ITEM_DEFAULT_LENGTH + self.length as u32
-        );
 
         SYNTAX_ITEM_DEFAULT_LENGTH + self.length as u32
     }
