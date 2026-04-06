@@ -2,7 +2,7 @@ mod service_user;
 
 use core::net::SocketAddr;
 use std::collections::HashMap;
-use std::io::{Cursor, BufReader};
+use std::io::{BufReader, Cursor};
 use std::net::IpAddr;
 use std::string::String;
 use std::sync::{
@@ -10,9 +10,11 @@ use std::sync::{
     atomic::{AtomicI64, Ordering},
 };
 
-use rad_common::associate::{AssociateRqAcPdu, serialize_association_pdu, deserialize_association_pdu};
-use rad_common::pdu::{PDU_HEADER_LENGTH, PduHeader, read_pdu_header, Pdu};
-use rad_common::event::{Event, Command};
+use rad_common::associate::{
+    AssociateRqAcPdu, deserialize_association_pdu, serialize_association_pdu,
+};
+use rad_common::event::{Command, Event};
+use rad_common::pdu::{PDU_HEADER_LENGTH, Pdu, PduHeader, read_pdu_header};
 
 use rad_common::service::AssociateRequestResponse;
 use tokio::{
@@ -69,7 +71,7 @@ async fn handle_client<U: UpperLayerServiceUserAsync>(
         socket_addr.port()
     );
 
-    let mut conn = UpperLayerConnection::new(socket_addr.ip(), tcp.local_addr()?.ip());
+    let mut conn = UpperLayerConnection::new_server(socket_addr.ip(), tcp.local_addr()?.ip());
 
     loop {
         let header = tokio_read_pdu_header(&mut tcp).await?;
@@ -81,16 +83,12 @@ async fn handle_client<U: UpperLayerServiceUserAsync>(
         let pdu = deserialize_association_pdu(&mut cursor)?;
 
         let mut guard = service_user.lock().await;
-        let command = handle_incoming_pdu_async(
-            Pdu::AssociationRequest(pdu),
-            &mut conn,
-            &mut *guard,
-        )
-        .await?;
+        let command =
+            handle_incoming_pdu_async(Pdu::AssociationRequest(pdu), &mut conn, &mut *guard).await?;
 
         match command {
             Some(Command::AssociateAcceptPdu(response)) => {
-                handle_association_response(AssociateRequestResponse::Accepted(response), &mut tcp).await?;
+                //handle_association_response(AssociateRequestResponse::Accepted(response), &mut tcp).await?;
             }
             None => {
                 println!("command");
@@ -111,6 +109,7 @@ async fn tokio_read_pdu_header(tcp: &mut TcpStream) -> Result<PduHeader> {
     read_pdu_header(&mut cursor)
 }
 
+/*
 async fn handle_association_response(response: AssociateRequestResponse, tcp: &mut TcpStream) -> Result<()> {
     match response {
         AssociateRequestResponse::Accepted(inner) => {
@@ -127,3 +126,4 @@ async fn handle_association_response(response: AssociateRequestResponse, tcp: &m
         }
     }
 }
+*/

@@ -5,12 +5,12 @@ use std::net::IpAddr;
 
 use async_trait::async_trait;
 
+use rad_common::Pdu;
 use rad_common::associate::{AssociateRqAcPdu, deserialize_association_pdu, rj::ServiceUserReason};
 use rad_common::event::{Command, Event};
-use rad_common::Pdu;
 use rad_common::service::{self, AssociateRequestIndication, AssociateRequestResponse};
 
-use crate::association::{UpperLayerConnection};
+use crate::association::UpperLayerConnection;
 
 pub type Result<T> = std::result::Result<T, Error>;
 pub type Error = Box<dyn std::error::Error + Send + Sync>;
@@ -24,7 +24,10 @@ pub trait UpperLayerServiceUserAsync: Send + Sync {
 }
 
 pub trait UpperLayerServiceUser: Send + Sync {
-    fn handle_associate_request(&mut self, pdu: AssociateRequestIndication) -> AssociateRequestResponse;
+    fn handle_associate_request(
+        &mut self,
+        pdu: AssociateRequestIndication,
+    ) -> AssociateRequestResponse;
 }
 
 /// Helper function for handling DICOM state. Handles some commands and returns the rest.
@@ -35,8 +38,8 @@ pub trait UpperLayerServiceUser: Send + Sync {
 /// # Examples
 ///
 /// ```
-/// use eradic_adaptor::handle_pdu_with_state;
-/// conn = handle_incoming_pdu(&mut reader, conn, called, calling).unwrap();
+/// use eradic_adaptor::handle_incoming_pdu_async;
+/// command = handle_incoming_pdu(pdu, &mut conn, service_user).unwrap();
 /// ```
 pub async fn handle_incoming_pdu_async<U: UpperLayerServiceUserAsync>(
     pdu: Pdu,
@@ -69,11 +72,7 @@ pub async fn handle_incoming_pdu_async<U: UpperLayerServiceUserAsync>(
                 }
             }
         }
-        None => {
-            Ok(None)
-        }
-        _ => {
-            Ok(None)
-        }
+        None => Ok(None),
+        _ => Ok(None),
     }
 }

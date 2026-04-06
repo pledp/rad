@@ -1,8 +1,8 @@
 mod abort;
+pub mod presentation_context;
 pub mod rj;
 mod rq_ac;
 mod user_information;
-pub mod presentation_context;
 
 pub use abort::*;
 pub use rq_ac::*;
@@ -20,13 +20,15 @@ pub(self) const CONTEXT_ID_LENGTH: usize = 1;
 /// Length of the Result/Reason field.
 pub(self) const RESULT_LENGTH: usize = 1;
 
-fn service_provider_rq_pdu_validation(pdu: &AssociateRqAcPdu) -> Option<(RejectedAssociationResult, RejectReason)> {
+fn service_provider_rq_pdu_validation(
+    pdu: &AssociateRqAcPdu,
+) -> Option<(RejectedAssociationResult, RejectReason)> {
     let source = RejectSource::Acse;
 
     if pdu.protocol_version != 1 {
         return Some((
             RejectedAssociationResult::RejectedPermanent,
-            RejectReason::Acse(AcseReason::ProtocolNotSupported)
+            RejectReason::Acse(AcseReason::ProtocolNotSupported),
         ));
     }
 
@@ -36,7 +38,7 @@ fn service_provider_rq_pdu_validation(pdu: &AssociateRqAcPdu) -> Option<(Rejecte
 #[derive(Debug)]
 pub enum RejectedAssociationResult {
     RejectedPermanent,
-    RejectedTransient
+    RejectedTransient,
 }
 
 /// Peek into the next byte and output item type.
@@ -49,7 +51,6 @@ where
         .try_into()
         .map_err(|e| Box::new(e) as Box<dyn std::error::Error + Send + Sync>)
 }
-
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]

@@ -1,12 +1,19 @@
+use std::net::{IpAddr, Ipv4Addr};
 use std::path::Path;
 
 use tokio::{
-    io::{AsyncReadExt, AsyncWriteExt, BufWriter},
+    io::{AsyncWriteExt, BufWriter},
     net::TcpStream,
 };
 
-use rad_common::associate::{AssociateRqAcPdu, serialize_association_pdu};
+use rad_common::associate::{
+    AssociateRqAcPdu, MaximumLength, UserInformation, serialize_association_pdu,
+};
+use rad_common::event::Event;
 use rad_common::open_file;
+use rad_common::service::{AssociateRequestIndication, PresentationContextDefinitionListBuilder};
+
+use eradic_adaptor::association::UpperLayerConnection;
 
 pub type Result<T> = std::result::Result<T, Error>;
 pub type Error = Box<dyn std::error::Error + Send + Sync>;
@@ -18,19 +25,45 @@ async fn main() -> Result<()> {
     let mut stream = TcpStream::connect("127.0.0.1:104").await?;
     println!("Connected to server");
 
-    let pdu = AssociateRqAcPdu::new_rq("rad", "test1")?;
+    let mut conn = UpperLayerConnection::new_client();
 
-    let mut writer = BufWriter::new(stream);
+    // TODO: Builder
+    let indication = AssociateRequestIndication::new(
+        // TODO: Application context enum?
+        "1.2.840.10008.3.1.1.1".into(),
+        "rad".into(),
+        "test1".into(),
+        vec![UserInformation::MaximumLength(MaximumLength {
+            maximum_length: 300,
+        })],
+        IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)),
+        IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)),
+        vec![
+            PresentationContextDefinitionListBuilder::new()
+                .context_id(1)
+                .abstract_syntax("1.2.840.10008.1.1".to_string())
+                .add_transfer_syntax("1.2.840.10008.1.2".to_string())
+                .build()?,
+        ],
+    );
+
+    conn.handle_event(Event::AssociateRequestPrimitive(indication.clone()));
+    conn.handle_event(Event::ConnectionOpen);
+
+    let pdu = AssociateRqAcPdu::from_indication(&indication)?;
+
+    send_rq(&mut stream, pdu).await;
+
+    Ok(())
+}
+
+async fn send_rq(tcp: &mut TcpStream, pdu: AssociateRqAcPdu) -> Result<()> {
+    let mut writer = BufWriter::new(tcp);
 
     writer
         .write_all(serialize_association_pdu(&pdu)?.as_slice())
         .await?;
     writer.flush().await?;
-
-    // Read response
-    let mut buffer = vec![0; 1024];
-    let n = writer.read(&mut buffer).await?;
-    println!("Server replied: {}", String::from_utf8_lossy(&buffer[..n]));
 
     Ok(())
 }

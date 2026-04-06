@@ -1,8 +1,8 @@
 pub mod associate;
+pub mod event;
 pub mod pdu;
 pub mod service;
 pub mod vr;
-pub mod event;
 
 pub use pdu::Pdu;
 

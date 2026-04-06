@@ -58,7 +58,7 @@ impl From<PduType> for u8 {
             PduType::Data => 0x04,
             PduType::ReleaseRequest => 0x05,
             PduType::ReleaseResponse => 0x06,
-            PduType::Abort => 0x07
+            PduType::Abort => 0x07,
         }
     }
 }

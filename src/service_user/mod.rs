@@ -3,10 +3,14 @@ use async_trait::async_trait;
 use std::collections::HashMap;
 
 use rad_common::{
-    associate::{RejectedAssociationResult, rj::{
-        AcseReason, PresentationReason, RejectReason, RejectSource, ServiceUserReason,
-    }},
-    service::{AcceptedAssociateRequestResponse, AssociateRequestIndication, AssociateRequestResponse, RejectedAssociateRequestResponse},
+    associate::{
+        RejectedAssociationResult,
+        rj::{AcseReason, PresentationReason, RejectReason, RejectSource, ServiceUserReason},
+    },
+    service::{
+        AcceptedAssociateRequestResponse, AssociateRequestIndication, AssociateRequestResponse,
+        RejectedAssociateRequestResponse,
+    },
 };
 
 use eradic_adaptor::UpperLayerServiceUserAsync;
@@ -14,7 +18,10 @@ use eradic_adaptor::UpperLayerServiceUserAsync;
 pub type ApplicationEntityRegistry = HashMap<String, Box<dyn ApplicationEntity>>;
 
 trait ApplicationEntity: Send + Sync {
-    fn handle_associate_request(&self, indication: AssociateRequestIndication) -> AssociateRequestResponse;
+    fn handle_associate_request(
+        &self,
+        indication: AssociateRequestIndication,
+    ) -> AssociateRequestResponse;
 }
 
 struct Pacs {}
@@ -29,7 +36,7 @@ impl ApplicationEntity for Pacs {
             called_ae: indication.called_ae,
             calling_ae: indication.calling_ae,
             user_information: indication.user_information,
-            presentation_context_result: indication.presentation_context
+            presentation_context_result: indication.presentation_context,
         })
     }
 }
@@ -62,12 +69,10 @@ impl UpperLayerServiceUserAsync for ServiceUser {
 
         match result {
             Some(result) => result,
-            None => {
-                AssociateRequestResponse::Rejected(RejectedAssociateRequestResponse::new(
-                    Some(ServiceUserReason::CalledAeNotRecognized),
-                    RejectedAssociationResult::RejectedPermanent
-                ))
-            }
+            None => AssociateRequestResponse::Rejected(RejectedAssociateRequestResponse::new(
+                Some(ServiceUserReason::CalledAeNotRecognized),
+                RejectedAssociationResult::RejectedPermanent,
+            )),
         }
     }
 }

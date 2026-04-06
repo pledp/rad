@@ -136,6 +136,7 @@ dependencies = [
 name = "rad_client"
 version = "0.1.0"
 dependencies = [
+ "eradic_adaptor",
  "rad_common",
  "tokio",
 ]
