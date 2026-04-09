@@ -1,8 +1,9 @@
 use std::net::IpAddr;
+use std::result;
 
 use crate::Result;
 use crate::associate::RejectedAssociationResult;
-use crate::associate::presentation_context::SyntaxItem;
+use crate::associate::presentation_context::{PresentationContextResult, SyntaxItem};
 use crate::associate::rj::ServiceUserReason;
 use crate::associate::{
     AssociateRqAcPdu, MaximumLength, UserInformation, UserInformationSubItem,
@@ -87,6 +88,7 @@ pub struct PresentationContextDefinitionList {
     pub context_id: u8,
     pub abstract_syntax: Option<String>,
     pub transfer_syntax: Vec<String>,
+    pub result: Option<PresentationContextResult>,
 }
 
 impl PresentationContextDefinitionList {
@@ -94,11 +96,13 @@ impl PresentationContextDefinitionList {
         context_id: u8,
         abstract_syntax: Option<String>,
         transfer_syntax: Vec<String>,
+        result: Option<PresentationContextResult>,
     ) -> Self {
         Self {
             context_id,
             abstract_syntax,
             transfer_syntax,
+            result
         }
     }
 
@@ -112,14 +116,29 @@ impl PresentationContextDefinitionList {
                 .iter()
                 .map(|s| s.to_string())
                 .collect(),
+            result: item.result
         }
     }
+}
+
+/// Creates a [PresentationContextDefinitionList] with result from a [PresentationContextDefinitionList]
+pub fn presentation_context_definition_list_with_result(
+    context: &PresentationContextDefinitionList,
+    result: PresentationContextResult
+) -> PresentationContextDefinitionList {
+    PresentationContextDefinitionList::new(
+        context.context_id,
+        context.abstract_syntax.clone(),
+        context.transfer_syntax.clone(),
+        Some(result)
+    )
 }
 
 pub struct PresentationContextDefinitionListBuilder {
     context_id: Option<u8>,
     abstract_syntax_item: Option<String>,
     transfer_syntax_items: Vec<String>,
+    result: Option<PresentationContextResult>,
 }
 
 impl PresentationContextDefinitionListBuilder {
@@ -128,7 +147,13 @@ impl PresentationContextDefinitionListBuilder {
             context_id: None,
             abstract_syntax_item: None,
             transfer_syntax_items: Vec::new(),
+            result: None,
         }
+    }
+
+    pub fn result(mut self, result: PresentationContextResult) -> Self {
+        self.result = Some(result);
+        self
     }
 
     pub fn context_id(mut self, context_id: u8) -> Self {
@@ -156,6 +181,7 @@ impl PresentationContextDefinitionListBuilder {
             self.context_id.unwrap(),
             self.abstract_syntax_item,
             self.transfer_syntax_items,
+            self.result,
         ))
     }
 }
@@ -171,6 +197,16 @@ pub struct AcceptedAssociateRequestResponse {
     pub calling_ae: String,
     pub user_information: Vec<UserInformation>,
     pub presentation_context_result: Vec<PresentationContextDefinitionList>,
+}
+
+impl AcceptedAssociateRequestResponse {
+    pub fn presentation_context_result(&self) -> &Vec<PresentationContextDefinitionList> {
+        &self.presentation_context_result
+    }
+
+    pub fn user_information(&self) -> &Vec<UserInformation> {
+        &self.user_information
+    }
 }
 
 pub struct RejectedAssociateRequestResponse {

@@ -156,6 +156,7 @@ impl UserInformationSubItem {
 
 pub fn serialize_sub_item(item: &UserInformationSubItem) -> Result<Vec<u8>> {
     let mut pdu: Vec<u8> = Vec::new();
+
     pdu.push(item.item_type);
     vec8_add_padding(&mut pdu, 1);
     pdu.extend_from_slice(&item.length.to_be_bytes());

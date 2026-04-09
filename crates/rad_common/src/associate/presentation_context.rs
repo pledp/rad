@@ -38,7 +38,6 @@ impl PresentationContextItem {
             AssociationItemType::PresentationContextAc => Ok(PresentationContextItem::new_ac(
                 context_id,
                 result.unwrap(),
-                abstract_syntax_item.unwrap(),
                 transfer_syntax_items,
             )),
             _ => return Err("Invalid type".into()),
@@ -72,22 +71,19 @@ impl PresentationContextItem {
     fn new_ac(
         context_id: u8,
         result: PresentationContextResult,
-        abstract_syntax_item: SyntaxItem,
         transfer_syntax_items: Vec<SyntaxItem>,
     ) -> Self {
         // Presentation context length without variable fields is 4
         let mut length = PRESENTATION_CONTEXT_ITEM_NO_VARIABLE_FIELDS_LENGTH;
 
-        length += abstract_syntax_item.item_length() as u16;
-
         length += transfer_syntax_items[0].item_length() as u16;
 
         Self {
-            item_type: AssociationItemType::PresentationContextRq,
+            item_type: AssociationItemType::PresentationContextAc,
             length,
             context_id,
-            result: None,
-            abstract_syntax_item: Some(abstract_syntax_item),
+            result: Some(result),
+            abstract_syntax_item: None,
             transfer_syntax_items,
         }
     }

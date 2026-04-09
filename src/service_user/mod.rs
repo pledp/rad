@@ -4,12 +4,11 @@ use std::collections::HashMap;
 
 use rad_common::{
     associate::{
-        RejectedAssociationResult,
-        rj::{AcseReason, PresentationReason, RejectReason, RejectSource, ServiceUserReason},
+        RejectedAssociationResult, presentation_context::PresentationContextResult, rj::{AcseReason, PresentationReason, RejectReason, RejectSource, ServiceUserReason}
     },
     service::{
         AcceptedAssociateRequestResponse, AssociateRequestIndication, AssociateRequestResponse,
-        RejectedAssociateRequestResponse,
+        RejectedAssociateRequestResponse, presentation_context_definition_list_with_result
     },
 };
 
@@ -31,12 +30,19 @@ impl ApplicationEntity for Pacs {
         &self,
         indication: AssociateRequestIndication,
     ) -> AssociateRequestResponse {
+        let presentation_context_result = vec![
+            presentation_context_definition_list_with_result(
+                &indication.presentation_context[0],
+                PresentationContextResult::Acceptance
+            )
+        ];
+
         AssociateRequestResponse::Accepted(AcceptedAssociateRequestResponse {
             context_name: indication.context_name,
             called_ae: indication.called_ae,
             calling_ae: indication.calling_ae,
             user_information: indication.user_information,
-            presentation_context_result: indication.presentation_context,
+            presentation_context_result,
         })
     }
 }

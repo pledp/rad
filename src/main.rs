@@ -1,7 +1,6 @@
 mod service_user;
 
 use core::net::SocketAddr;
-use std::collections::HashMap;
 use std::io::{BufReader, Cursor};
 use std::net::IpAddr;
 use std::string::String;
@@ -9,6 +8,9 @@ use std::sync::{
     Arc,
     atomic::{AtomicI64, Ordering},
 };
+
+use tracing::{info, Level, debug};
+use tracing_subscriber::FmtSubscriber;
 
 use rad_common::associate::{
     AssociateRqAcPdu, deserialize_association_pdu, serialize_association_pdu,
@@ -34,6 +36,18 @@ pub type Error = Box<dyn std::error::Error + Send + Sync>;
 
 #[tokio::main]
 async fn main() -> Result<()> {
+    tracing_log::LogTracer::init()?;
+
+    let subscriber = FmtSubscriber::builder()
+        .with_max_level(Level::DEBUG)
+        .with_file(true)
+        .with_line_number(true)
+        .finish();
+
+    tracing::subscriber::set_global_default(subscriber)?;
+
+    info!("system initialized");
+
     let server = TcpListener::bind("127.0.0.1:104").await?;
     println!("Listening for connections...");
 
@@ -88,7 +102,7 @@ async fn handle_client<U: UpperLayerServiceUserAsync>(
 
         match command {
             Some(Command::AssociateAcceptPdu(response)) => {
-                //handle_association_response(AssociateRequestResponse::Accepted(response), &mut tcp).await?;
+                handle_association_response(AssociateRequestResponse::Accepted(response), &mut tcp).await?;
             }
             None => {
                 println!("command");
@@ -109,21 +123,18 @@ async fn tokio_read_pdu_header(tcp: &mut TcpStream) -> Result<PduHeader> {
     read_pdu_header(&mut cursor)
 }
 
-/*
+
 async fn handle_association_response(response: AssociateRequestResponse, tcp: &mut TcpStream) -> Result<()> {
     match response {
         AssociateRequestResponse::Accepted(inner) => {
-            let pdu = AssociateRqAcPdu::new_ac(&inner.called_ae, &inner.calling_ae)?;
-
+            let pdu = AssociateRqAcPdu::from_response(&inner)?;
             tcp
                 .write_all(serialize_association_pdu(&pdu)?.as_slice())
                 .await?;
             todo!();
         }
         AssociateRequestResponse::Rejected(inner) => {
-            println!("test");
             todo!();
         }
     }
 }
-*/

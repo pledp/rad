@@ -2,6 +2,8 @@ use std::fmt;
 use std::io::{BufRead, BufReader, Read};
 use std::string::String;
 
+use log::{debug, error, info, warn};
+
 use crate::Result;
 use crate::associate::presentation_context::{
     PresentationContextResult, SyntaxItemBuilder, deserialize_presentation_context_item,
@@ -16,7 +18,7 @@ use crate::associate::{
     presentation_context::{PresentationContextItem, PresentationContextItemBuilder},
 };
 use crate::pdu::{PDU_LENGTH_LENGTH, PDU_TYPE_LENGTH, PduType, read_padding, vec8_add_padding};
-use crate::service::AssociateRequestIndication;
+use crate::service::{AcceptedAssociateRequestResponse, AssociateRequestIndication, AssociateRequestResponse};
 
 /// Length of the Protocol Version field in a A-ASSOCIATE-RQ or A-ASSOCIATE-AC PDU
 const PROTOCOL_VERSION_LENGTH: usize = 2;
@@ -70,9 +72,65 @@ pub struct AssociateRqAcPdu {
     user_info_item: UserInfoItem,
 }
 
-// TODO: Add builder; several presentation context items; new_rq free function
-// TODO: move new_rq to free function, add new
 impl AssociateRqAcPdu {
+    pub fn from_response(response: &AcceptedAssociateRequestResponse) -> Result<Self> {
+        info!("PDU from response");
+        const NO_VARIABLE_FIELDS_LENGTH: u32 = 68;
+        let mut length = NO_VARIABLE_FIELDS_LENGTH;
+
+        let application_context_item = ApplicationContextItem::new(&response.context_name);
+        length += application_context_item.item_length();
+
+        let mut presentation_context_items: Vec<PresentationContextItem> = Vec::new();
+
+        for context in response.presentation_context_result() {
+            match context.transfer_syntax.len() {
+                1 => {}
+                len => {
+                    error!("PresentationContextDefinitionList invalid length: {}, expected 1", len);
+                    return Err("Expected one element".into());
+                }
+            }
+
+            presentation_context_items.push(PresentationContextItemBuilder::new()
+                .item_type(AssociationItemType::PresentationContextAc)
+                .context_id(context.context_id)
+                .result(context.result.unwrap())
+                .add_transfer_syntax(
+                    SyntaxItemBuilder::new()
+                        .item_type(AssociationItemType::TransferSyntax)
+                        .syntax(context.transfer_syntax[0].clone())
+                        .build()?,
+                )
+                .build()?
+            );
+        }
+
+        length += presentation_context_items
+            .iter()
+            .map(|item| item.item_length())
+            .sum::<u32>();
+
+        let mut user_info_sub_items = Vec::new();
+
+        for user_info in response.user_information() {
+            user_info_sub_items.push(UserInformationSubItem::new(user_info.clone()));
+        }
+
+        let user_info_item = UserInfoItem::new(user_info_sub_items);
+
+        Ok(Self {
+            pdu_type: PduType::AssociateAccept,
+            length,
+            protocol_version: 1,
+            called_ae: response.called_ae.clone(),
+            calling_ae: response.calling_ae.clone(),
+            application_context_item,
+            presentation_context_items,
+            user_info_item,
+        })
+    }
+
     pub fn from_indication(indication: &AssociateRequestIndication) -> Result<Self> {
         const NO_VARIABLE_FIELDS_LENGTH: u32 = 68;
         let mut length = NO_VARIABLE_FIELDS_LENGTH;
@@ -117,6 +175,7 @@ impl AssociateRqAcPdu {
         }
 
         let user_info_item = UserInfoItem::new(user_info_sub_items);
+        length += user_info_item.item_length();
 
         Ok(Self {
             pdu_type: PduType::AssociateRequest,
@@ -258,7 +317,6 @@ pub fn deserialize_association_pdu<T: Read>(reader: &mut T) -> Result<AssociateR
         }
     }
 
-    // TODO: Handle Some for called_ae and calling_ae
     Ok(AssociateRqAcPdu {
         pdu_type: pdu_type[0].try_into()?,
         length: u32::from_be_bytes(pdu_length),
