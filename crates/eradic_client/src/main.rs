@@ -6,12 +6,12 @@ use tokio::{
     net::TcpStream,
 };
 
-use rad_common::associate::{
+use eradic_common::associate::{
     AssociateRqAcPdu, MaximumLength, UserInformation, serialize_association_pdu,
 };
-use rad_common::event::Event;
-use rad_common::open_file;
-use rad_common::service::{AssociateRequestIndication, PresentationContextDefinitionListBuilder};
+use eradic_common::event::Event;
+use eradic_common::open_file;
+use eradic_common::service::{AssociateRequestIndication, PresentationContextDefinitionListBuilder};
 
 use eradic_adaptor::association::UpperLayerConnection;
 

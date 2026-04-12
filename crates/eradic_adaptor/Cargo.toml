@@ -5,4 +5,4 @@ edition = "2024"
 
 [dependencies]
 async-trait = "0.1.89"
-rad_common = { path = "../rad_common", version = "0.1.0" }
+eradic_common = { path = "../eradic_common", version = "0.1.0" }

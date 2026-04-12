@@ -5,10 +5,10 @@ use std::net::IpAddr;
 
 use async_trait::async_trait;
 
-use rad_common::Pdu;
-use rad_common::associate::{AssociateRqAcPdu, deserialize_association_pdu, rj::ServiceUserReason};
-use rad_common::event::{Command, Event};
-use rad_common::service::{self, AssociateRequestIndication, AssociateRequestResponse};
+use eradic_common::Pdu;
+use eradic_common::associate::{AssociateRqAcPdu, deserialize_association_pdu, rj::ServiceUserReason};
+use eradic_common::event::{Command, Event};
+use eradic_common::service::{self, AssociateRequestIndication, AssociateRequestResponse};
 
 use crate::association::UpperLayerConnection;
 

@@ -3,7 +3,7 @@ Eradic is a DICOM (Digital Imaging and Communications in Medicine) implementatio
 
 ## Crates 
 
-### [eradic_core](./crates/rad_common)
+### [eradic_core](./crates/eradic_common)
 
 Includes core DICOM data structures. Acts as the core layer for a DICOM UL (upper layer) implementation.
 
@@ -15,7 +15,7 @@ Part of DICOM service user layer. DICOM UL service provider does not know about
 
 TODO: Move rad/src to crates/eradic_ul
 
-DICOM UL service provider implementation server written with Tokio. Uses [eradic_core](./crates/rad_common) and [eradic_adaptor](./crates/eradic_adaptor).
+DICOM UL service provider implementation server written with Tokio. Uses [eradic_core](./crates/eradic_common) and [eradic_adaptor](./crates/eradic_adaptor).
 
 ### [eradic_client](./crates/rad_client)
 

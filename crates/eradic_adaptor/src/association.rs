@@ -1,6 +1,6 @@
 use std::net::IpAddr;
 
-use rad_common::{
+use eradic_common::{
     event::{Command, Event},
     service::AssociateRequestIndication,
 };

@@ -12,13 +12,13 @@ use std::sync::{
 use tracing::{info, Level, debug};
 use tracing_subscriber::FmtSubscriber;
 
-use rad_common::associate::{
+use eradic_common::associate::{
     AssociateRqAcPdu, deserialize_association_pdu, serialize_association_pdu,
 };
-use rad_common::event::{Command, Event};
-use rad_common::pdu::{PDU_HEADER_LENGTH, Pdu, PduHeader, read_pdu_header};
+use eradic_common::event::{Command, Event};
+use eradic_common::pdu::{PDU_HEADER_LENGTH, Pdu, PduHeader, read_pdu_header};
 
-use rad_common::service::AssociateRequestResponse;
+use eradic_common::service::AssociateRequestResponse;
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
     net::{TcpListener, TcpStream},

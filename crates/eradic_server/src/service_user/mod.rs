@@ -2,7 +2,7 @@ use async_trait::async_trait;
 
 use std::collections::HashMap;
 
-use rad_common::{
+use eradic_common::{
     associate::{
         RejectedAssociationResult, presentation_context::PresentationContextResult, rj::{AcseReason, PresentationReason, RejectReason, RejectSource, ServiceUserReason}
     },

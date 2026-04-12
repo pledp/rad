@@ -5,5 +5,5 @@ edition = "2024"
 
 [dependencies]
 tokio = { version = "1.48.0", features = ["full"] }
-rad_common = { path = "../rad_common", version = "0.1.0" }
+eradic_common = { path = "../eradic_common", version = "0.1.0" }
 eradic_adaptor = { path = "../eradic_adaptor", version = "0.1.0" }
