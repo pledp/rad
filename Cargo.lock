@@ -47,10 +47,32 @@ dependencies = [
 ]
 
 [[package]]
+name = "eradic_client"
+version = "0.1.0"
+dependencies = [
+ "eradic_adaptor",
+ "eradic_common",
+ "tokio",
+]
+
+[[package]]
 name = "eradic_common"
 version = "0.1.0"
 dependencies = [
  "log",
+]
+
+[[package]]
+name = "eradic_server"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "eradic_adaptor",
+ "eradic_common",
+ "tokio",
+ "tracing",
+ "tracing-log",
+ "tracing-subscriber",
 ]
 
 [[package]]
@@ -161,28 +183,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "41f2619966050689382d2b44f664f4bc593e129785a36d6ee376ddf37259b924"
 dependencies = [
  "proc-macro2",
-]
-
-[[package]]
-name = "rad"
-version = "0.1.0"
-dependencies = [
- "async-trait",
- "eradic_adaptor",
- "eradic_common",
- "tokio",
- "tracing",
- "tracing-log",
- "tracing-subscriber",
-]
-
-[[package]]
-name = "rad_client"
-version = "0.1.0"
-dependencies = [
- "eradic_adaptor",
- "eradic_common",
- "tokio",
 ]
 
 [[package]]

@@ -2,7 +2,7 @@ use std::net::{IpAddr, Ipv4Addr};
 use std::path::Path;
 
 use tokio::{
-    io::{AsyncWriteExt, BufWriter},
+    io::{AsyncWriteExt, BufWriter, AsyncReadExt},
     net::TcpStream,
 };
 
@@ -64,6 +64,10 @@ async fn send_rq(tcp: &mut TcpStream, pdu: AssociateRqAcPdu) -> Result<()> {
         .write_all(serialize_association_pdu(&pdu)?.as_slice())
         .await?;
     writer.flush().await?;
+
+    let mut buffer = vec![0; 1024];
+    let n = writer.read(&mut buffer).await?;
+    println!("Server replied: {}", String::from_utf8_lossy(&buffer[..n]));
 
     Ok(())
 }

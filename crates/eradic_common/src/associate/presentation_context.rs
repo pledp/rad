@@ -143,6 +143,7 @@ impl From<PresentationContextResult> for u8 {
     }
 }
 
+#[derive(Debug, PartialEq)]
 pub struct SyntaxItem {
     pub item_type: AssociationItemType,
     pub length: u16,
@@ -150,12 +151,26 @@ pub struct SyntaxItem {
 }
 
 impl SyntaxItem {
-    pub fn new(item_type: AssociationItemType, syntax: &str) -> Self {
-        Self {
+    /// Creates a SyntaxItem.
+    ///
+    /// [SyntaxItem] may represent an abstract syntax or a transfer syntax.
+    ///
+    /// # Arguments
+    /// * `item_type` - Must be [AssociationItemType::AbstractSyntax] or [AssociationItemType::TransferSyntax].
+    pub fn new(item_type: AssociationItemType, syntax: &str) -> Result<Self> {
+        match item_type {
+            AssociationItemType::AbstractSyntax
+            | AssociationItemType::TransferSyntax => {}
+            _ => {
+                return Err("Invalid item_type for SyntaxItem".into());
+            }
+        }
+
+        Ok(Self {
             item_type,
             length: syntax.len() as u16,
             syntax: syntax.into(),
-        }
+        })
     }
 
     pub fn item_length(&self) -> u32 {
@@ -256,7 +271,7 @@ impl SyntaxItemBuilder {
         Ok(SyntaxItem::new(
             self.item_type.unwrap(),
             &self.syntax.unwrap(),
-        ))
+        )?)
     }
 }
 
@@ -371,6 +386,11 @@ pub(crate) fn serialize_syntax_item(item: &SyntaxItem) -> Result<Vec<u8>> {
     Ok(pdu)
 }
 
+/// Deserializes bytes from a [Read] into a [SyntaxItem].
+///
+/// # Errors
+/// - Returns an error if the reader does not contain enough bytes (4 + Item Length).
+/// - Returns an error if [AssociationItemType] is invalid.
 pub(crate) fn deserialize_syntax_item<T: Read>(reader: &mut T) -> Result<SyntaxItem> {
     let mut pdu_type = [0u8; PDU_TYPE_LENGTH];
     reader.read_exact(&mut pdu_type)?;
@@ -388,5 +408,65 @@ pub(crate) fn deserialize_syntax_item<T: Read>(reader: &mut T) -> Result<SyntaxI
     Ok(SyntaxItem::new(
         pdu_type[0].try_into()?,
         &String::from_utf8(syntax)?,
-    ))
+    )?)
+}
+
+#[cfg(test)]
+mod tests {
+    use std::io::Cursor;
+
+    use super::*;
+
+    #[test]
+    fn test_syntax_item_new() {
+        assert!(SyntaxItem::new(AssociationItemType::AbstractSyntax, "1.2.840.10008.1.1").is_ok());
+        assert!(SyntaxItem::new(AssociationItemType::TransferSyntax, "1.2.840.10008.1.2").is_ok());
+        assert!(SyntaxItem::new(AssociationItemType::PresentationContextAc, "1.2.840.10008.1.2").is_err());
+    }
+
+    #[test]
+    fn test_deserialize_syntax_item_ok() {
+        let mut data = Cursor::new(vec![
+            0x40, 0x00,
+            0x00, 0x11,
+            0x31, 0x2e, 0x32, 0x2e,
+            0x38, 0x34, 0x30, 0x2e,
+            0x31, 0x30, 0x30, 0x30,
+            0x38, 0x2e, 0x31, 0x2e,
+            0x32,
+        ]);
+
+        let item = SyntaxItem::new(AssociationItemType::TransferSyntax, "1.2.840.10008.1.2").unwrap();
+
+        assert_eq!(item, deserialize_syntax_item(&mut data).unwrap());
+    }
+
+    #[test]
+    fn test_deserialize_syntax_item_invalid_type() {
+        let mut data = Cursor::new(vec![
+            0x10, 0x00,
+            0x00, 0x11,
+            0x31, 0x2e, 0x32, 0x2e,
+            0x38, 0x34, 0x30, 0x2e,
+            0x31, 0x30, 0x30, 0x30,
+            0x38, 0x2e, 0x31, 0x2e,
+            0x32,
+        ]);
+
+        assert!(deserialize_syntax_item(&mut data).is_err());
+    }
+
+    #[test]
+    fn test_deserialize_syntax_item_invalid_length() {
+        let mut data = Cursor::new(vec![
+            0x40, 0x00,
+            0x00, 0x11,
+            0x31, 0x2e, 0x32, 0x2e,
+            0x38, 0x34, 0x30, 0x2e,
+            0x31, 0x30, 0x30, 0x30,
+            0x38, 0x2e, 0x31, 0x2e,
+        ]);
+
+        assert!(deserialize_syntax_item(&mut data).is_err());
+    }
 }

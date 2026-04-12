@@ -49,7 +49,7 @@ async fn main() -> Result<()> {
     info!("system initialized");
 
     let server = TcpListener::bind("127.0.0.1:104").await?;
-    println!("Listening for connections...");
+    info!("Listening for connections...");
 
     let service_user = Arc::new(Mutex::new(ServiceUser::new()));
 
@@ -79,7 +79,7 @@ async fn handle_client<U: UpperLayerServiceUserAsync>(
     mut socket_addr: SocketAddr,
     service_user: Arc<Mutex<U>>,
 ) -> Result<()> {
-    println!(
+    info!(
         "Connected client: {}:{}",
         socket_addr.ip(),
         socket_addr.port()
@@ -89,29 +89,34 @@ async fn handle_client<U: UpperLayerServiceUserAsync>(
 
     loop {
         let header = tokio_read_pdu_header(&mut tcp).await?;
-        let mut buffer = vec![0u8; PDU_HEADER_LENGTH + header.length as usize];
-        let n = tcp.read_exact(&mut buffer).await?;
-
-        let mut cursor = Cursor::new(buffer);
-
-        let pdu = deserialize_association_pdu(&mut cursor)?;
-
         let mut guard = service_user.lock().await;
-        let command =
-            handle_incoming_pdu_async(Pdu::AssociationRequest(pdu), &mut conn, &mut *guard).await?;
-
-        match command {
-            Some(Command::AssociateAcceptPdu(response)) => {
-                handle_association_response(AssociateRequestResponse::Accepted(response), &mut tcp).await?;
-            }
-            None => {
-                println!("command");
-            }
-            _ => {
-                todo!()
-            }
-        }
+        tokio_handle_pdu(&mut tcp, &mut conn, header, &mut *guard).await?;
     }
+}
+
+async fn tokio_handle_pdu<U: UpperLayerServiceUserAsync>(tcp: &mut TcpStream, conn: &mut UpperLayerConnection, header: PduHeader, service_user: &mut U) -> Result<()> {
+    let mut buffer = vec![0u8; PDU_HEADER_LENGTH + header.length as usize];
+    let n = tcp.read_exact(&mut buffer).await?;
+
+    let mut cursor = Cursor::new(buffer);
+
+    let pdu = deserialize_association_pdu(&mut cursor)?;
+
+    let command =
+        handle_incoming_pdu_async(Pdu::AssociationRequest(pdu), conn, service_user).await?;
+
+    match command {
+        Some(Command::AssociateAcceptPdu(response)) => {
+            handle_association_response(AssociateRequestResponse::Accepted(response), tcp).await;
+        }
+        None => {
+            println!("command");
+        }
+        _ => {
+            todo!()
+        }
+    };
+    Ok(())
 }
 
 async fn tokio_read_pdu_header(tcp: &mut TcpStream) -> Result<PduHeader> {
@@ -131,7 +136,7 @@ async fn handle_association_response(response: AssociateRequestResponse, tcp: &m
             tcp
                 .write_all(serialize_association_pdu(&pdu)?.as_slice())
                 .await?;
-            todo!();
+            Ok(())
         }
         AssociateRequestResponse::Rejected(inner) => {
             todo!();

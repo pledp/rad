@@ -119,6 +119,8 @@ impl AssociateRqAcPdu {
 
         let user_info_item = UserInfoItem::new(user_info_sub_items);
 
+        length += user_info_item.item_length();
+
         Ok(Self {
             pdu_type: PduType::AssociateAccept,
             length,

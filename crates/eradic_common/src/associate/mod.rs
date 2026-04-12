@@ -52,7 +52,7 @@ where
         .map_err(|e| Box::new(e) as Box<dyn std::error::Error + Send + Sync>)
 }
 
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]
 pub enum AssociationItemType {
     ApplicationContext,
