@@ -1,8 +1,11 @@
 use std::io::{BufRead, BufReader, Read};
+use std::result::Result;
 
+use thiserror::Error;
+
+use crate::associate::PduDeserializationError;
 use crate::pdu::{PDU_LENGTH_LENGTH, PDU_TYPE_LENGTH, PduType, read_padding, vec8_add_padding};
 use crate::{
-    Result,
     associate::{
         AssociationItemType, CONTEXT_ID_LENGTH, ITEM_LENGTH_LENGTH, RESULT_LENGTH,
         next_byte_item_type,
@@ -28,7 +31,7 @@ impl PresentationContextItem {
         result: Option<PresentationContextResult>,
         abstract_syntax_item: Option<SyntaxItem>,
         transfer_syntax_items: Vec<SyntaxItem>,
-    ) -> Result<Self> {
+    ) -> crate::Result<Self> {
         match item_type {
             AssociationItemType::PresentationContextRq => Ok(PresentationContextItem::new_rq(
                 context_id,
@@ -119,7 +122,7 @@ pub enum PresentationContextResult {
 impl TryFrom<u8> for PresentationContextResult {
     type Error = crate::Error;
 
-    fn try_from(value: u8) -> Result<Self> {
+    fn try_from(value: u8) -> crate::Result<Self> {
         match value {
             0x00 => Ok(PresentationContextResult::Acceptance),
             0x01 => Ok(PresentationContextResult::UserRejection),
@@ -140,47 +143,6 @@ impl From<PresentationContextResult> for u8 {
             PresentationContextResult::AbstractSyntaxNotSupported => 0x03,
             PresentationContextResult::TransferSyntaxesNotSupported => 0x04,
         }
-    }
-}
-
-#[derive(Debug, PartialEq)]
-pub struct SyntaxItem {
-    pub item_type: AssociationItemType,
-    pub length: u16,
-    syntax: String,
-}
-
-impl SyntaxItem {
-    /// Creates a SyntaxItem.
-    ///
-    /// [SyntaxItem] may represent an abstract syntax or a transfer syntax.
-    ///
-    /// # Arguments
-    /// * `item_type` - Must be [AssociationItemType::AbstractSyntax] or [AssociationItemType::TransferSyntax].
-    pub fn new(item_type: AssociationItemType, syntax: &str) -> Result<Self> {
-        match item_type {
-            AssociationItemType::AbstractSyntax
-            | AssociationItemType::TransferSyntax => {}
-            _ => {
-                return Err("Invalid item_type for SyntaxItem".into());
-            }
-        }
-
-        Ok(Self {
-            item_type,
-            length: syntax.len() as u16,
-            syntax: syntax.into(),
-        })
-    }
-
-    pub fn item_length(&self) -> u32 {
-        const SYNTAX_ITEM_DEFAULT_LENGTH: u32 = 4;
-
-        SYNTAX_ITEM_DEFAULT_LENGTH + self.length as u32
-    }
-
-    pub fn syntax(&self) -> &str {
-        &self.syntax
     }
 }
 
@@ -233,7 +195,7 @@ impl PresentationContextItemBuilder {
         self
     }
 
-    pub fn build(self) -> Result<PresentationContextItem> {
+    pub fn build(self) -> crate::Result<PresentationContextItem> {
         Ok(PresentationContextItem::new(
             self.item_type.unwrap(),
             self.context_id.unwrap(),
@@ -241,6 +203,53 @@ impl PresentationContextItemBuilder {
             self.abstract_syntax_item,
             self.transfer_syntax_items,
         )?)
+    }
+}
+
+#[derive(Debug, Error)]
+pub enum SyntaxItemError {
+    #[error("Item type must be {:?} or {:?}", AssociationItemType::AbstractSyntax, AssociationItemType::TransferSyntax)]
+    InvalidItemType
+}
+
+#[derive(Debug, PartialEq)]
+pub struct SyntaxItem {
+    pub item_type: AssociationItemType,
+    pub length: u16,
+    syntax: String,
+}
+
+impl SyntaxItem {
+    /// Creates a SyntaxItem.
+    ///
+    /// [SyntaxItem] may represent an abstract syntax or a transfer syntax.
+    ///
+    /// # Arguments
+    /// * `item_type` - Must be [AssociationItemType::AbstractSyntax] or [AssociationItemType::TransferSyntax].
+    pub fn new(item_type: AssociationItemType, syntax: &str) -> Result<Self, SyntaxItemError> {
+        match item_type {
+            AssociationItemType::AbstractSyntax
+            | AssociationItemType::TransferSyntax => {}
+            _ => {
+                return Err(SyntaxItemError::InvalidItemType);
+            }
+        }
+
+        Ok(Self {
+            item_type,
+            length: syntax.len() as u16,
+            syntax: syntax.into(),
+        })
+    }
+
+    pub fn item_length(&self) -> u32 {
+        const SYNTAX_ITEM_DEFAULT_LENGTH: u32 = 4;
+
+        SYNTAX_ITEM_DEFAULT_LENGTH + self.length as u32
+    }
+
+    pub fn syntax(&self) -> &str {
+        &self.syntax
     }
 }
 
@@ -267,7 +276,7 @@ impl SyntaxItemBuilder {
         self
     }
 
-    pub fn build(self) -> Result<SyntaxItem> {
+    pub fn build(self) -> crate::Result<SyntaxItem> {
         Ok(SyntaxItem::new(
             self.item_type.unwrap(),
             &self.syntax.unwrap(),
@@ -277,7 +286,7 @@ impl SyntaxItemBuilder {
 
 pub(crate) fn serialize_presentation_context_item(
     item: &PresentationContextItem,
-) -> Result<Vec<u8>> {
+) -> crate::Result<Vec<u8>> {
     let mut pdu: Vec<u8> = Vec::new();
 
     pdu.push(item.item_type.into());
@@ -299,11 +308,11 @@ pub(crate) fn serialize_presentation_context_item(
     vec8_add_padding(&mut pdu, 1);
 
     if let Some(item) = &item.abstract_syntax_item {
-        pdu.extend(serialize_syntax_item(&item)?);
+        pdu.extend(serialize_syntax_item(&item));
     }
 
     for item in item.transfer_syntax_items.iter() {
-        pdu.extend(serialize_syntax_item(&item)?);
+        pdu.extend(serialize_syntax_item(&item));
     }
 
     Ok(pdu)
@@ -314,7 +323,7 @@ pub(crate) fn serialize_presentation_context_item(
 /// [deserialize_presentation_context_item] does not handle correct ordering.
 pub(crate) fn deserialize_presentation_context_item<T: Read>(
     reader: &mut T,
-) -> Result<PresentationContextItem> {
+) -> crate::Result<PresentationContextItem> {
     let mut pdu_type = [0u8; PDU_TYPE_LENGTH];
     reader.read_exact(&mut pdu_type)?;
 
@@ -375,7 +384,7 @@ pub(crate) fn deserialize_presentation_context_item<T: Read>(
     )
 }
 
-pub(crate) fn serialize_syntax_item(item: &SyntaxItem) -> Result<Vec<u8>> {
+pub(crate) fn serialize_syntax_item(item: &SyntaxItem) -> Vec<u8> {
     let mut pdu: Vec<u8> = Vec::new();
 
     pdu.push(item.item_type.into());
@@ -383,7 +392,7 @@ pub(crate) fn serialize_syntax_item(item: &SyntaxItem) -> Result<Vec<u8>> {
     pdu.extend_from_slice(&item.length.to_be_bytes());
     pdu.extend_from_slice(&item.syntax().as_bytes());
 
-    Ok(pdu)
+    pdu
 }
 
 /// Deserializes bytes from a [Read] into a [SyntaxItem].
@@ -391,9 +400,9 @@ pub(crate) fn serialize_syntax_item(item: &SyntaxItem) -> Result<Vec<u8>> {
 /// # Errors
 /// - Returns an error if the reader does not contain enough bytes (4 + Item Length).
 /// - Returns an error if [AssociationItemType] is invalid.
-pub(crate) fn deserialize_syntax_item<T: Read>(reader: &mut T) -> Result<SyntaxItem> {
-    let mut pdu_type = [0u8; PDU_TYPE_LENGTH];
-    reader.read_exact(&mut pdu_type)?;
+pub(crate) fn deserialize_syntax_item<T: Read>(reader: &mut T) -> Result<SyntaxItem, PduDeserializationError> {
+    let mut item_type = [0u8; PDU_TYPE_LENGTH];
+    reader.read_exact(&mut item_type)?;
 
     read_padding(reader, 1);
 
@@ -406,10 +415,13 @@ pub(crate) fn deserialize_syntax_item<T: Read>(reader: &mut T) -> Result<SyntaxI
     reader.read_exact(&mut syntax)?;
 
     Ok(SyntaxItem::new(
-        pdu_type[0].try_into()?,
+        item_type[0]
+            .try_into()
+            .map_err(|_| PduDeserializationError::InvalidItemType)?,
         &String::from_utf8(syntax)?,
     )?)
 }
+
 
 #[cfg(test)]
 mod tests {
@@ -418,10 +430,37 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_syntax_item_new() {
+    fn test_syntax_item_new_ok() {
         assert!(SyntaxItem::new(AssociationItemType::AbstractSyntax, "1.2.840.10008.1.1").is_ok());
         assert!(SyntaxItem::new(AssociationItemType::TransferSyntax, "1.2.840.10008.1.2").is_ok());
-        assert!(SyntaxItem::new(AssociationItemType::PresentationContextAc, "1.2.840.10008.1.2").is_err());
+    }
+
+    #[test]
+    fn test_syntax_item_length() {
+        let mut data = vec![
+            0x40, 0x00,
+            0x00, 0x11,
+            0x31, 0x2e, 0x32, 0x2e,
+            0x38, 0x34, 0x30, 0x2e,
+            0x31, 0x30, 0x30, 0x30,
+            0x38, 0x2e, 0x31, 0x2e,
+            0x32,
+        ];
+
+        let item = SyntaxItem::new(AssociationItemType::TransferSyntax, "1.2.840.10008.1.1").unwrap();
+        assert_eq!(item.item_length(), data.len() as u32);
+    }
+
+    #[test]
+    fn test_syntax_item_new_err() {
+        assert!(matches!(
+            SyntaxItem::new(AssociationItemType::PresentationContextAc, "1.2.840.10008.1.1"),
+            Err(SyntaxItemError::InvalidItemType)
+        ));
+        assert!(matches!(
+            SyntaxItem::new(AssociationItemType::UserInformation, "1.2.840.10008.1.1"),
+            Err(SyntaxItemError::InvalidItemType)
+        ));
     }
 
     #[test]
@@ -453,7 +492,12 @@ mod tests {
             0x32,
         ]);
 
-        assert!(deserialize_syntax_item(&mut data).is_err());
+        assert!(matches!(
+            deserialize_syntax_item(&mut data),
+            Err(PduDeserializationError::InvalidSyntaxItem(
+                SyntaxItemError::InvalidItemType
+            ))
+        ));
     }
 
     #[test]
@@ -467,6 +511,38 @@ mod tests {
             0x38, 0x2e, 0x31, 0x2e,
         ]);
 
-        assert!(deserialize_syntax_item(&mut data).is_err());
+        assert!(matches!(
+            deserialize_syntax_item(&mut data),
+            Err(PduDeserializationError::InvalidLength(_))
+        ));
+    }
+
+    #[test]
+    fn test_serialize_syntax_item_ok() {
+        let mut data = vec![
+            0x40, 0x00,
+            0x00, 0x11,
+            0x31, 0x2e, 0x32, 0x2e,
+            0x38, 0x34, 0x30, 0x2e,
+            0x31, 0x30, 0x30, 0x30,
+            0x38, 0x2e, 0x31, 0x2e,
+            0x32,
+        ];
+
+        assert_eq!(
+            serialize_syntax_item(
+                &SyntaxItem::new(AssociationItemType::TransferSyntax, "1.2.840.10008.1.2").unwrap()
+            ),
+            data
+        );
+    }
+
+    #[test]
+    fn test_syntax_item_deserialize_serialize_cycle() {
+        let item = SyntaxItem::new(AssociationItemType::TransferSyntax, "1.2.840.10008.1.2").unwrap();
+        let serialized = serialize_syntax_item(&item);
+        let deserialized_item = deserialize_syntax_item(&mut Cursor::new(serialized)).unwrap();
+
+        assert_eq!(item, deserialized_item);
     }
 }

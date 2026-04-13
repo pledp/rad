@@ -4,6 +4,8 @@ pub mod rj;
 mod rq_ac;
 mod user_information;
 
+use thiserror::{Error};
+
 pub use abort::*;
 pub use rq_ac::*;
 pub use user_information::*;
@@ -64,9 +66,9 @@ pub enum AssociationItemType {
 }
 
 impl TryFrom<u8> for AssociationItemType {
-    type Error = crate::associate::Error;
+    type Error = PduDeserializationError;
 
-    fn try_from(value: u8) -> std::result::Result<Self, Error> {
+    fn try_from(value: u8) -> std::result::Result<Self, Self::Error> {
         match value {
             0x10 => Ok(AssociationItemType::ApplicationContext),
             0x20 => Ok(AssociationItemType::PresentationContextRq),
@@ -74,7 +76,7 @@ impl TryFrom<u8> for AssociationItemType {
             0x30 => Ok(AssociationItemType::AbstractSyntax),
             0x40 => Ok(AssociationItemType::TransferSyntax),
             0x50 => Ok(AssociationItemType::UserInformation),
-            _ => Err(Error::InvalidValue),
+            _ => Err(PduDeserializationError::InvalidItemType),
         }
     }
 }
@@ -90,4 +92,16 @@ impl From<AssociationItemType> for u8 {
             AssociationItemType::UserInformation => 0x50,
         }
     }
+}
+
+#[derive(Debug, Error)]
+pub enum PduDeserializationError {
+    #[error("Item type does not exist")]
+    InvalidItemType,
+    #[error(transparent)]
+    InvalidSyntaxItem(#[from] presentation_context::SyntaxItemError),
+    #[error(transparent)]
+    InvalidLength(#[from] std::io::Error),
+    #[error(transparent)]
+    InvalidEncoding(#[from] std::string::FromUtf8Error)
 }
