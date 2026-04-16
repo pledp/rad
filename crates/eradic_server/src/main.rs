@@ -15,6 +15,7 @@ use tracing_subscriber::FmtSubscriber;
 use eradic_common::associate::{
     AssociateRqAcPdu, deserialize_association_pdu, serialize_association_pdu,
 };
+use eradic_common::connection::UpperLayerConnection;
 use eradic_common::event::{Command, Event};
 use eradic_common::pdu::{PDU_HEADER_LENGTH, Pdu, PduHeader, read_pdu_header};
 
@@ -26,7 +27,7 @@ use tokio::{
 };
 
 use eradic_adaptor::{
-    UpperLayerServiceUserAsync, association::UpperLayerConnection, handle_incoming_pdu_async,
+    UpperLayerServiceUserAsync, handle_incoming_pdu_async,
 };
 
 use crate::service_user::ServiceUser;

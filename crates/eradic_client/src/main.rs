@@ -13,7 +13,7 @@ use eradic_common::event::Event;
 use eradic_common::open_file;
 use eradic_common::service::{AssociateRequestIndication, PresentationContextDefinitionListBuilder};
 
-use eradic_adaptor::association::UpperLayerConnection;
+use eradic_common::connection::UpperLayerConnection;
 
 pub type Result<T> = std::result::Result<T, Error>;
 pub type Error = Box<dyn std::error::Error + Send + Sync>;

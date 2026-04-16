@@ -1,5 +1,3 @@
-pub mod association;
-
 use std::io::Read;
 use std::net::IpAddr;
 
@@ -9,8 +7,7 @@ use eradic_common::Pdu;
 use eradic_common::associate::{AssociateRqAcPdu, deserialize_association_pdu, rj::ServiceUserReason};
 use eradic_common::event::{Command, Event};
 use eradic_common::service::{self, AssociateRequestIndication, AssociateRequestResponse};
-
-use crate::association::UpperLayerConnection;
+use eradic_common::connection::UpperLayerConnection;
 
 pub type Result<T> = std::result::Result<T, Error>;
 pub type Error = Box<dyn std::error::Error + Send + Sync>;

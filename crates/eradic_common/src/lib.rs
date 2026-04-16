@@ -3,6 +3,7 @@ pub mod event;
 pub mod pdu;
 pub mod service;
 pub mod vr;
+pub mod connection;
 
 pub use pdu::Pdu;
 
