@@ -15,7 +15,7 @@ use tracing_subscriber::FmtSubscriber;
 use eradic_common::associate::{
     AssociateRqAcPdu, deserialize_association_pdu, serialize_association_pdu,
 };
-use eradic_common::connection::UpperLayerConnection;
+use eradic_common::connection::UpperLayerAcceptorConnection;
 use eradic_common::event::{Command, Event};
 use eradic_common::pdu::{PDU_HEADER_LENGTH, Pdu, PduHeader, read_pdu_header};
 
@@ -86,7 +86,7 @@ async fn handle_client<U: UpperLayerServiceUserAsync>(
         socket_addr.port()
     );
 
-    let mut conn = UpperLayerConnection::new_server(socket_addr.ip(), tcp.local_addr()?.ip());
+    let mut conn = UpperLayerAcceptorConnection::new_server(socket_addr.ip(), tcp.local_addr()?.ip());
 
     loop {
         let header = tokio_read_pdu_header(&mut tcp).await?;
@@ -95,7 +95,7 @@ async fn handle_client<U: UpperLayerServiceUserAsync>(
     }
 }
 
-async fn tokio_handle_pdu<U: UpperLayerServiceUserAsync>(tcp: &mut TcpStream, conn: &mut UpperLayerConnection, header: PduHeader, service_user: &mut U) -> Result<()> {
+async fn tokio_handle_pdu<U: UpperLayerServiceUserAsync>(tcp: &mut TcpStream, conn: &mut UpperLayerAcceptorConnection, header: PduHeader, service_user: &mut U) -> Result<()> {
     let mut buffer = vec![0u8; PDU_HEADER_LENGTH + header.length as usize];
     let n = tcp.read_exact(&mut buffer).await?;
 

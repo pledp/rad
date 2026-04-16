@@ -13,7 +13,7 @@ use eradic_common::event::Event;
 use eradic_common::open_file;
 use eradic_common::service::{AssociateRequestIndication, PresentationContextDefinitionListBuilder};
 
-use eradic_common::connection::UpperLayerConnection;
+use eradic_common::connection::UpperLayerAcceptorConnection;
 
 pub type Result<T> = std::result::Result<T, Error>;
 pub type Error = Box<dyn std::error::Error + Send + Sync>;
@@ -25,7 +25,7 @@ async fn main() -> Result<()> {
     let mut stream = TcpStream::connect("127.0.0.1:104").await?;
     println!("Connected to server");
 
-    let mut conn = UpperLayerConnection::new_client();
+    let mut conn = UpperLayerAcceptorConnection::new_client();
 
     // TODO: Builder
     let indication = AssociateRequestIndication::new(

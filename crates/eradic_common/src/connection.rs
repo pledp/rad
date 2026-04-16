@@ -26,14 +26,19 @@ pub enum UpperLayerConnectionState {
 /// depending on performed actions.
 ///
 /// See [DICOM standard part 8](https://dicom.nema.org/medical/dicom/current/output/html/part08).
-pub struct UpperLayerConnection {
+pub struct UpperLayerAcceptorConnection {
     state: UpperLayerConnectionState,
     called_address: Option<IpAddr>,
     calling_address: Option<IpAddr>,
 }
 
-impl UpperLayerConnection {
+// TODO: Remove new_client, create UpperLayerRequestorConnection
+impl UpperLayerAcceptorConnection {
     pub fn new_client() -> Self {
+        Self::new_no_assoc()
+    }
+
+    pub fn new_no_assoc() -> Self {
         Self {
             state: UpperLayerConnectionState::NoAssociation,
             called_address: None,

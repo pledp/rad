@@ -7,7 +7,7 @@ use eradic_common::Pdu;
 use eradic_common::associate::{AssociateRqAcPdu, deserialize_association_pdu, rj::ServiceUserReason};
 use eradic_common::event::{Command, Event};
 use eradic_common::service::{self, AssociateRequestIndication, AssociateRequestResponse};
-use eradic_common::connection::UpperLayerConnection;
+use eradic_common::connection::UpperLayerAcceptorConnection;
 
 pub type Result<T> = std::result::Result<T, Error>;
 pub type Error = Box<dyn std::error::Error + Send + Sync>;
@@ -40,7 +40,7 @@ pub trait UpperLayerServiceUser: Send + Sync {
 /// ```
 pub async fn handle_incoming_pdu_async<U: UpperLayerServiceUserAsync>(
     pdu: Pdu,
-    conn: &mut UpperLayerConnection,
+    conn: &mut UpperLayerAcceptorConnection,
     service_user: &mut U,
 ) -> Result<Option<Command>> {
     let mut command: Option<Command> = None;

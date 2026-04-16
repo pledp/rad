@@ -1,28 +1,28 @@
 # eradic
-Eradic is a DICOM (Digital Imaging and Communications in Medicine) implementation written in Rust. Eradic includes several crates to facilitate DICOM message passing over a network.
-
-## Crates 
-
-### [eradic_core](./crates/eradic_common)
-
-Includes core DICOM data structures. Acts as the core layer for a DICOM UL (upper layer) implementation.
-
-### [eradic_adaptor](./crates/eradic_adaptor)
-
-Part of DICOM service user layer. DICOM UL service provider does not know about 
-
-### [eradic_ul](./crates/eradic_ul)
-
-TODO: Move rad/src to crates/eradic_ul
-
-DICOM UL service provider implementation server written with Tokio. Uses [eradic_core](./crates/eradic_common) and [eradic_adaptor](./crates/eradic_adaptor).
-
-### [eradic_client](./crates/rad_client)
-
-Simple DICOM UL service provider used to facilitate testing.
+Eradic is a lightweight DICOM (Digital Imaging and Communications in Medicine) implementation written in Rust. 
 
 ## Features
 
-### Resources
+### Upper Layer service provider (UL SCP) development
+
+Eradic enables building flexible DICOM Upper Layer service providers for different underlying architectures. 
+
+The Eradic DICOM state machine only takes events as input to handle state transistions and produce commands as outputs.
+
+```rust
+let mut conn = UpperLayerConnection::new_server(socket_addr.ip(), tcp.local_addr()?.ip());
+
+// 
+let pdu = deserialize_association_pdu(&mut reader)?;
+
+let command = conn.handle_event(Event::AssociateRequestPdu(pdu))
+
+match command {
+    Some(Command::AssociateAcceptPdu(response)) => ...
+```
+
+It is the callers responsibility to invoke events and handle produced commands.
+
+## Resources
 - [DICOM standard](https://www.dicomstandard.org/current)
 - [DICOM Standard Browser](https://dicom.innolitics.com/ciods)
