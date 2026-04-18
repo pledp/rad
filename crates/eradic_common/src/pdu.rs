@@ -15,7 +15,7 @@ pub const PDU_HEADER_LENGTH: usize = 6;
 
 const APPLICATION_CONTEXT_NAME: &'static str = "1.2.840.10008.3.1.1.1";
 
-pub enum Pdu {
+pub enum DeserializedPdu {
     AssociationRequest(AssociateRqAcPdu),
     AssociationAccept(AssociateRqAcPdu),
 }

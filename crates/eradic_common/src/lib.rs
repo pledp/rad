@@ -5,7 +5,7 @@ pub mod service;
 pub mod vr;
 pub mod connection;
 
-pub use pdu::Pdu;
+pub use pdu::DeserializedPdu;
 
 use std::collections::HashMap;
 use std::fs::File;

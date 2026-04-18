@@ -69,5 +69,8 @@ async fn send_rq(tcp: &mut TcpStream, pdu: AssociateRqAcPdu) -> Result<()> {
     let n = writer.read(&mut buffer).await?;
     println!("Server replied: {}", String::from_utf8_lossy(&buffer[..n]));
 
+    print!("Waiting for more packets");
+    let mut buffer = vec![0; 1024];
+    let n = writer.read(&mut buffer).await?;
     Ok(())
 }

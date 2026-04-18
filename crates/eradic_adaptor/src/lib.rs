@@ -3,11 +3,11 @@ use std::net::IpAddr;
 
 use async_trait::async_trait;
 
-use eradic_common::Pdu;
+use eradic_common::DeserializedPdu;
 use eradic_common::associate::{AssociateRqAcPdu, deserialize_association_pdu, rj::ServiceUserReason};
 use eradic_common::event::{Command, Event};
 use eradic_common::service::{self, AssociateRequestIndication, AssociateRequestResponse};
-use eradic_common::connection::UpperLayerAcceptorConnection;
+use eradic_common::connection::{UpperLayerAcceptorConnection, handle_server_event};
 
 pub type Result<T> = std::result::Result<T, Error>;
 pub type Error = Box<dyn std::error::Error + Send + Sync>;
@@ -39,15 +39,16 @@ pub trait UpperLayerServiceUser: Send + Sync {
 /// command = handle_incoming_pdu(pdu, &mut conn, service_user).unwrap();
 /// ```
 pub async fn handle_incoming_pdu_async<U: UpperLayerServiceUserAsync>(
-    pdu: Pdu,
-    conn: &mut UpperLayerAcceptorConnection,
+    pdu: DeserializedPdu,
+    conn: &UpperLayerAcceptorConnection,
     service_user: &mut U,
-) -> Result<Option<Command>> {
+) -> Result<(Option<Command>, UpperLayerAcceptorConnection)> {
     let mut command: Option<Command> = None;
+    let mut new_state = conn.clone();
 
     match pdu {
-        Pdu::AssociationRequest(pdu) => {
-            command = conn.handle_event(Event::AssociateRequestPdu(pdu))?;
+        DeserializedPdu::AssociationRequest(pdu) => {
+            (command, new_state) = handle_server_event(&new_state, Event::AssociateRequestPdu(pdu))?;
         }
         _ => {
             todo!()
@@ -62,14 +63,14 @@ pub async fn handle_incoming_pdu_async<U: UpperLayerServiceUserAsync>(
                 AssociateRequestResponse::Accepted(inner) => {
                     // Handle the event and return the next command
 
-                    conn.handle_event(Event::AssociateResponsePrimitiveAccept(inner))
+                    handle_server_event(&new_state, Event::AssociateResponsePrimitiveAccept(inner))
                 }
                 AssociateRequestResponse::Rejected(inner) => {
-                    conn.handle_event(Event::AssociateResponsePrimitiveReject(inner))
+                    handle_server_event(&new_state, Event::AssociateResponsePrimitiveReject(inner))
                 }
             }
         }
-        None => Ok(None),
-        _ => Ok(None),
+        None => Ok((None, new_state)),
+        _ => Ok((None, new_state)),
     }
 }
