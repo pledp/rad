@@ -12,6 +12,7 @@ pub enum RejectReason {
     Presentation(PresentationReason),
 }
 
+#[derive(Debug)]
 pub enum ServiceUserReason {
     NoReason,
     ApplicationContextNameNotSupported,

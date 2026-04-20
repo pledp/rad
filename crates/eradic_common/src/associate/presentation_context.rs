@@ -15,6 +15,7 @@ use crate::{
 /// Length of the presentation context item without the variable field.
 pub const PRESENTATION_CONTEXT_ITEM_NO_VARIABLE_FIELDS_LENGTH: u16 = 4;
 
+#[derive(Debug)]
 pub struct PresentationContextItem {
     pub item_type: AssociationItemType,
     pub length: u16,
@@ -109,7 +110,7 @@ impl PresentationContextItem {
     }
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 #[repr(u8)]
 pub enum PresentationContextResult {
     Acceptance,

@@ -61,6 +61,7 @@ impl fmt::Display for Error {
 
 impl std::error::Error for Error {}
 
+#[derive(Debug)]
 pub struct AssociateRqAcPdu {
     pub pdu_type: PduType,
     pub length: u32,
@@ -74,7 +75,6 @@ pub struct AssociateRqAcPdu {
 
 impl AssociateRqAcPdu {
     pub fn from_response(response: &AcceptedAssociateRequestResponse) -> Result<Self> {
-        info!("PDU from response");
         const NO_VARIABLE_FIELDS_LENGTH: u32 = 68;
         let mut length = NO_VARIABLE_FIELDS_LENGTH;
 
@@ -332,8 +332,9 @@ pub fn deserialize_association_pdu<T: Read>(reader: &mut T) -> Result<AssociateR
 }
 
 // TODO: item_type struct
+#[derive(Debug)]
 pub struct ApplicationContextItem {
-    pub item_type: u8,
+    pub item_type: AssociationItemType,
     pub length: u16,
     context_name: String,
 }
@@ -343,7 +344,7 @@ impl ApplicationContextItem {
         let context_name = context_name.into();
 
         Self {
-            item_type: 0x10,
+            item_type: AssociationItemType::ApplicationContext,
             length: context_name.len() as u16,
             context_name,
         }
@@ -363,7 +364,7 @@ impl ApplicationContextItem {
 fn serialize_application_context_item(item: &ApplicationContextItem) -> Result<Vec<u8>> {
     let mut pdu: Vec<u8> = Vec::new();
 
-    pdu.push(item.item_type);
+    pdu.push(item.item_type.into());
     vec8_add_padding(&mut pdu, 1);
     pdu.extend_from_slice(&item.length.to_be_bytes());
     pdu.extend_from_slice(&item.context_name.as_bytes());
@@ -386,7 +387,7 @@ fn deserialize_application_context_item<T: Read>(reader: &mut T) -> Result<Appli
     reader.read_exact(&mut context_name)?;
 
     Ok(ApplicationContextItem {
-        item_type: pdu_type[0].into(),
+        item_type: pdu_type[0].try_into()?,
         length,
         context_name: String::from_utf8(context_name)?,
     })

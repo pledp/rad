@@ -17,60 +17,12 @@ pub trait UpperLayerServiceUserAsync: Send + Sync {
     async fn handle_associate_request(
         &mut self,
         pdu: AssociateRequestIndication,
-    ) -> AssociateRequestResponse;
+    ) -> Event;
 }
 
 pub trait UpperLayerServiceUser: Send + Sync {
     fn handle_associate_request(
         &mut self,
         pdu: AssociateRequestIndication,
-    ) -> AssociateRequestResponse;
-}
-
-/// Helper function for handling DICOM state. Handles some commands and returns the rest.
-///
-/// Part of the DICOM Upper Layer protocol. Intended to be agnostic of networking implementation and how PDU's are read.
-///
-///
-/// # Examples
-///
-/// ```
-/// use eradic_adaptor::handle_incoming_pdu_async;
-/// command = handle_incoming_pdu(pdu, &mut conn, service_user).unwrap();
-/// ```
-pub async fn handle_incoming_pdu_async<U: UpperLayerServiceUserAsync>(
-    pdu: DeserializedPdu,
-    conn: &UpperLayerAcceptorConnection,
-    service_user: &mut U,
-) -> Result<(Option<Command>, UpperLayerAcceptorConnection)> {
-    let mut command: Option<Command> = None;
-    let mut new_state = conn.clone();
-
-    match pdu {
-        DeserializedPdu::AssociationRequest(pdu) => {
-            (command, new_state) = handle_server_event(&new_state, Event::AssociateRequestPdu(pdu))?;
-        }
-        _ => {
-            todo!()
-        }
-    }
-
-    match command {
-        Some(Command::AssociationIndication(indication)) => {
-            let response = service_user.handle_associate_request(indication).await;
-
-            match response {
-                AssociateRequestResponse::Accepted(inner) => {
-                    // Handle the event and return the next command
-
-                    handle_server_event(&new_state, Event::AssociateResponsePrimitiveAccept(inner))
-                }
-                AssociateRequestResponse::Rejected(inner) => {
-                    handle_server_event(&new_state, Event::AssociateResponsePrimitiveReject(inner))
-                }
-            }
-        }
-        None => Ok((None, new_state)),
-        _ => Ok((None, new_state)),
-    }
+    ) -> Event;
 }

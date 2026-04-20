@@ -12,16 +12,17 @@ use crate::associate::{
 };
 use crate::pdu::{PDU_LENGTH_LENGTH, PDU_TYPE_LENGTH, PduType, read_padding, vec8_add_padding};
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub enum UserInformation {
     MaximumLength(MaximumLength),
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub struct MaximumLength {
     pub maximum_length: u32,
 }
 
+#[derive(Debug)]
 pub struct UserInfoItem {
     pub item_type: AssociationItemType,
     pub length: u16,
@@ -119,6 +120,7 @@ pub fn deserialize_user_info_item<T: Read>(reader: &mut T) -> Result<UserInfoIte
     })
 }
 
+#[derive(Debug)]
 pub struct UserInformationSubItem {
     pub item_type: u8,
     pub length: u16,

@@ -17,23 +17,23 @@ use tokio::{
     sync::{Mutex, mpsc},
 };
 
-use tracing::{info, Level};
+use tracing::{Level, info};
 use tracing_subscriber::FmtSubscriber;
 
 use eradic_common::associate::{
     self, AssociateRqAcPdu, deserialize_association_pdu, serialize_association_pdu
 };
-use eradic_common::connection::UpperLayerAcceptorConnection;
-use eradic_common::event::{Command};
+use eradic_common::connection::{UpperLayerAcceptorConnection, UpperLayerRequestorConnection, handle_server_event};
+use eradic_common::event::{Command, Event};
 use eradic_common::pdu::{DeserializedPdu, PDU_HEADER_LENGTH, PduHeader, PduType, read_pdu_header};
 
 use eradic_common::service::AssociateRequestResponse;
 
 use eradic_adaptor::{
-    UpperLayerServiceUserAsync, handle_incoming_pdu_async,
+    UpperLayerServiceUser, UpperLayerServiceUserAsync
 };
 
-use crate::service_user::ServiceUser;
+use crate::service_user::{ServiceUser, UpperLayerServiceProviderConnection};
 
 pub type Result<T> = std::result::Result<T, Error>;
 pub type Error = Box<dyn std::error::Error + Send + Sync>;
@@ -82,7 +82,7 @@ enum error {
     some,
 }
 
-async fn handle_client<U: UpperLayerServiceUserAsync + Send + 'static>(
+async fn handle_client<U: UpperLayerServiceUser + Send + 'static>(
     mut tcp: TcpStream,
     mut socket_addr: SocketAddr,
     service_user: Arc<Mutex<U>>,
@@ -97,14 +97,21 @@ async fn handle_client<U: UpperLayerServiceUserAsync + Send + 'static>(
 
     let called = writer.local_addr()?.ip();
 
-    let (tx, mut rx) = mpsc::channel::<DeserializedPdu>(32);
+    let (command_tx, mut command_rx) = mpsc::channel::<Command>(32);
+    let (event_tx, mut event_rx) = mpsc::channel::<Event>(32);
 
     let cancel = CancellationToken::new();
     let child = cancel.child_token();
+    let child_2 = cancel.child_token();
 
-    let mut connection_task = tokio::spawn(async move {
-        handle_pdu_task(service_user, writer, rx, called, socket_addr.ip(), child).await;
-    });
+    let connection = UpperLayerServiceProviderConnection::new(service_user);
+    let mut command_task = tokio::spawn(
+        handle_command_task(writer, command_rx, event_tx.clone(), connection, child)
+    );
+
+    let mut event_task = tokio::spawn(
+        handle_event_task(event_rx, command_tx.clone(), called, socket_addr.ip(), child_2)
+    );
 
     // TODO: Move to other functions, too nested
     let read_task: tokio::task::JoinHandle<Result<String>> = tokio::spawn(async move {
@@ -121,12 +128,13 @@ async fn handle_client<U: UpperLayerServiceUserAsync + Send + 'static>(
                     };
 
                     match deserialized_pdu {
-                        Some(pdu) => {
-                            if tx.send(pdu).await.is_err() {
-                                return Err("test".into())
-                            }
+                        Some(DeserializedPdu::AssociationRequest(pdu)) => {
+                            info!("Sending event");
+                            event_tx.send(
+                                Event::AssociateRequestPdu(pdu)
+                            ).await;
                         },
-                        None => {
+                        _ => {
                             return Err("test".into())
                         }
                     };
@@ -151,7 +159,7 @@ async fn handle_client<U: UpperLayerServiceUserAsync + Send + 'static>(
         }
     };
 
-    tokio::join!(connection_task);
+    tokio::join!(command_task, event_task);
 
     info!(
         "Closing connection: {}:{}",
@@ -162,17 +170,14 @@ async fn handle_client<U: UpperLayerServiceUserAsync + Send + 'static>(
     Ok(())
 }
 
-async fn handle_pdu_task<U: UpperLayerServiceUserAsync + Send + 'static, W>(
-    service_user: Arc<Mutex<U>>,
-    mut writer: W,
-    mut rx: mpsc::Receiver<DeserializedPdu>,
+async fn handle_event_task(
+    mut event_rx: mpsc::Receiver<Event>,
+    mut command_tx: mpsc::Sender<Command>,
     called: IpAddr,
     calling: IpAddr,
     cancel: CancellationToken,
-) -> Result<()>
-where
-    W: AsyncWrite + Unpin,
-{
+) -> Result<()> {
+    info!("Event task started");
     let mut conn = UpperLayerAcceptorConnection::new_server(called, calling);
 
     loop {
@@ -182,34 +187,63 @@ where
                 break;
             }
             _ = async {
-                let deserialized_pdu = match rx.recv().await {
-                    Some(pdu) => pdu,
-                    None => {
-                        return
-                    }
-                };
+                let event = event_rx.recv().await.unwrap();
+                info!("Event received: {:?}", event);
 
-                let service_user = service_user.clone();
-
-                let mut guard = service_user.lock().await;
-
-                let (command, new_state) = handle_incoming_pdu_async(
-                    deserialized_pdu,
+                let (command, new_state) = handle_server_event(
                     &conn,
-                    &mut *guard,
+                    event,
                 )
-                .await.unwrap();
+                .unwrap();
 
                 conn = new_state;
 
+                if let Some(cmd) = command {
+                    command_tx.send(cmd).await;
+                }
+
+            } => {}
+        }
+    }
+
+    Ok(())
+}
+
+async fn handle_command_task<W, U: UpperLayerServiceUser>(
+    mut writer: W,
+    mut rx: mpsc::Receiver<Command>,
+    mut event_tx: mpsc::Sender<Event>,
+    mut user_connection: UpperLayerServiceProviderConnection<U>,
+    cancel: CancellationToken,
+) -> Result<()>
+where
+    W: AsyncWrite + Unpin,
+{
+    info!("Command task started");
+
+    loop {
+        tokio::select! {
+            _ = cancel.cancelled() => {
+                info!("cancelled");
+                break;
+            }
+            _ = async {
+                let command = rx.recv().await.unwrap();
+
+                info!("Command received");
                 match command {
-                    Some(Command::AssociateAcceptPdu(resp)) => {
+                    Command::AssociateAcceptPdu(resp) => {
                         handle_association_response(
                             AssociateRequestResponse::Accepted(resp),
                             &mut writer,
                         )
                         .await;
+                    },
+
+                    Command::AssociationIndication(indication) => {
+                        user_connection.handle_associate_request(indication, &mut event_tx).await;
                     }
+
                     _ => todo!()
                 };
             } => {}
@@ -243,6 +277,8 @@ where
 {
     match response {
         AssociateRequestResponse::Accepted(inner) => {
+            info!("Sending A-ASSOCIATION-AC PDU: {:?}", inner);
+
             let pdu = AssociateRqAcPdu::from_response(&inner)?;
             tcp
                 .write_all(serialize_association_pdu(&pdu)?.as_slice())
@@ -250,6 +286,7 @@ where
             Ok(())
         }
         AssociateRequestResponse::Rejected(inner) => {
+            info!("Sending A-ASSOCIATION-RJ PDU: {:?}", inner);
             todo!();
         }
     }
