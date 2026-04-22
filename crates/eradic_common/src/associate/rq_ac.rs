@@ -18,7 +18,9 @@ use crate::associate::{
     presentation_context::{PresentationContextItem, PresentationContextItemBuilder},
 };
 use crate::pdu::{PDU_LENGTH_LENGTH, PDU_TYPE_LENGTH, PduType, read_padding, vec8_add_padding};
-use crate::service::{AcceptedAssociateRequestResponse, AssociateRequestIndication, AssociateRequestResponse};
+use crate::service::{
+    AcceptedAssociateRequestResponse, AssociateRequestIndication, AssociateRequestResponse,
+};
 
 /// Length of the Protocol Version field in a A-ASSOCIATE-RQ or A-ASSOCIATE-AC PDU
 const PROTOCOL_VERSION_LENGTH: usize = 2;
@@ -87,22 +89,26 @@ impl AssociateRqAcPdu {
             match context.transfer_syntax.len() {
                 1 => {}
                 len => {
-                    error!("PresentationContextDefinitionList invalid length: {}, expected 1", len);
+                    error!(
+                        "PresentationContextDefinitionList invalid length: {}, expected 1",
+                        len
+                    );
                     return Err("Expected one element".into());
                 }
             }
 
-            presentation_context_items.push(PresentationContextItemBuilder::new()
-                .item_type(AssociationItemType::PresentationContextAc)
-                .context_id(context.context_id)
-                .result(context.result)
-                .add_transfer_syntax(
-                    SyntaxItemBuilder::new()
-                        .item_type(AssociationItemType::TransferSyntax)
-                        .syntax(context.transfer_syntax[0].clone())
-                        .build()?,
-                )
-                .build()?
+            presentation_context_items.push(
+                PresentationContextItemBuilder::new()
+                    .item_type(AssociationItemType::PresentationContextAc)
+                    .context_id(context.context_id)
+                    .result(context.result)
+                    .add_transfer_syntax(
+                        SyntaxItemBuilder::new()
+                            .item_type(AssociationItemType::TransferSyntax)
+                            .syntax(context.transfer_syntax[0].clone())
+                            .build()?,
+                    )
+                    .build()?,
             );
         }
 

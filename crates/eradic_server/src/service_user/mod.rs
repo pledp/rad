@@ -1,19 +1,20 @@
 use std::collections::HashMap;
 use std::sync::Arc;
-use tokio::sync::{Mutex};
+use tokio::sync::Mutex;
 
-use async_trait::async_trait;
-
-use eradic_common::{event::Command, service::PresentationContextDefinitionResultList};
+use eradic_common::service::PresentationContextDefinitionResultList;
 use tokio::sync::mpsc;
 
 use eradic_common::{
     associate::{
-        RejectedAssociationResult, presentation_context::PresentationContextResult, rj::{AcseReason, PresentationReason, RejectReason, RejectSource, ServiceUserReason}
-    }, event::Event, service::{
-        AcceptedAssociateRequestResponse, AssociateRequestIndication, AssociateRequestResponse,
-        RejectedAssociateRequestResponse
-    }
+        RejectedAssociationResult, presentation_context::PresentationContextResult,
+        rj::ServiceUserReason,
+    },
+    event::Event,
+    service::{
+        AcceptedAssociateRequestResponse, AssociateRequestIndication,
+        RejectedAssociateRequestResponse,
+    },
 };
 
 use eradic_adaptor::{UpperLayerServiceUser, UpperLayerServiceUserAsync};
@@ -21,26 +22,20 @@ use eradic_adaptor::{UpperLayerServiceUser, UpperLayerServiceUserAsync};
 pub type ApplicationEntityRegistry = HashMap<String, Box<dyn ApplicationEntity>>;
 
 trait ApplicationEntity: Send + Sync {
-    fn handle_associate_request(
-        &self,
-        indication: AssociateRequestIndication,
-    ) -> Event;
+    fn handle_associate_request(&self, indication: AssociateRequestIndication) -> Event;
 }
 
 struct Pacs {}
 
 impl ApplicationEntity for Pacs {
-    fn handle_associate_request(
-        &self,
-        mut indication: AssociateRequestIndication,
-    ) -> Event {
+    fn handle_associate_request(&self, indication: AssociateRequestIndication) -> Event {
         let presentation_context_result = indication
             .presentation_context
             .into_iter()
             .map(|ctx| {
                 PresentationContextDefinitionResultList::from_definition_list(
                     ctx,
-                    PresentationContextResult::Acceptance
+                    PresentationContextResult::Acceptance,
                 )
             })
             .collect();
@@ -71,10 +66,7 @@ impl ServiceUser {
 }
 
 impl UpperLayerServiceUser for ServiceUser {
-    fn handle_associate_request(
-        &mut self,
-        indication: AssociateRequestIndication,
-    ) -> Event {
+    fn handle_associate_request(&mut self, indication: AssociateRequestIndication) -> Event {
         let result = self
             .application_entities
             .get(&indication.called_ae)
@@ -96,12 +88,14 @@ pub struct UpperLayerServiceProviderConnection<U: UpperLayerServiceUser> {
 
 impl<U: UpperLayerServiceUser> UpperLayerServiceProviderConnection<U> {
     pub fn new(service_user: Arc<Mutex<U>>) -> Self {
-        Self {
-            service_user
-        }
+        Self { service_user }
     }
 
-    pub async fn handle_associate_request(&mut self, indication: AssociateRequestIndication, event_tx: &mut mpsc::Sender<Event>) {
+    pub async fn handle_associate_request(
+        &mut self,
+        indication: AssociateRequestIndication,
+        event_tx: &mut mpsc::Sender<Event>,
+    ) {
         let mut guard = self.service_user.lock().await;
 
         let response = guard.handle_associate_request(indication);

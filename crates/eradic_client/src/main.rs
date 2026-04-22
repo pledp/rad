@@ -2,7 +2,7 @@ use std::net::{IpAddr, Ipv4Addr};
 use std::path::Path;
 
 use tokio::{
-    io::{AsyncWriteExt, BufWriter, AsyncReadExt},
+    io::{AsyncReadExt, AsyncWriteExt, BufWriter},
     net::TcpStream,
 };
 
@@ -11,7 +11,9 @@ use eradic_common::associate::{
 };
 use eradic_common::event::Event;
 use eradic_common::open_file;
-use eradic_common::service::{AssociateRequestIndication, PresentationContextDefinitionListBuilder};
+use eradic_common::service::{
+    AssociateRequestIndication, PresentationContextDefinitionListBuilder,
+};
 
 use eradic_common::connection::UpperLayerAcceptorConnection;
 
@@ -20,7 +22,7 @@ pub type Error = Box<dyn std::error::Error + Send + Sync>;
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    let file = open_file(Path::new("assets/sample.dcm"))?;
+    let _file = open_file(Path::new("assets/sample.dcm"))?;
 
     let mut stream = TcpStream::connect("127.0.0.1:104").await?;
     println!("Connected to server");
@@ -71,6 +73,6 @@ async fn send_rq(tcp: &mut TcpStream, pdu: AssociateRqAcPdu) -> Result<()> {
 
     print!("Waiting for more packets");
     let mut buffer = vec![0; 1024];
-    let n = writer.read(&mut buffer).await?;
+    let _n = writer.read(&mut buffer).await?;
     Ok(())
 }

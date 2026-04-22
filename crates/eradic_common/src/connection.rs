@@ -103,7 +103,10 @@ impl UpperLayerAcceptorConnection {
     }
 }
 
-pub fn handle_server_event(conn: &UpperLayerAcceptorConnection, event: Event) -> Result<(Option<Command>, UpperLayerAcceptorConnection)> {
+pub fn handle_server_event(
+    conn: &UpperLayerAcceptorConnection,
+    event: Event,
+) -> Result<(Option<Command>, UpperLayerAcceptorConnection)> {
     let mut new_state = conn.clone();
 
     let command = match event {
@@ -153,7 +156,7 @@ pub fn handle_server_event(conn: &UpperLayerAcceptorConnection, event: Event) ->
 ///
 /// See [DICOM standard part 8](https://dicom.nema.org/medical/dicom/current/output/html/part08).
 pub struct UpperLayerRequestorConnection {
-    state: UpperLayerConnectionState
+    state: UpperLayerConnectionState,
 }
 
 impl UpperLayerRequestorConnection {
@@ -174,7 +177,7 @@ impl UpperLayerRequestorConnection {
 
                 Some(Command::AssociateRequestPdu)
             }
-            _ => todo!()
+            _ => todo!(),
         };
 
         Ok(command)

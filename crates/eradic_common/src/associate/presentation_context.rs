@@ -4,13 +4,10 @@ use std::result::Result;
 use thiserror::Error;
 
 use crate::associate::PduDeserializationError;
-use crate::pdu::{PDU_LENGTH_LENGTH, PDU_TYPE_LENGTH, PduType, read_padding, vec8_add_padding};
-use crate::{
-    associate::{
-        AssociationItemType, CONTEXT_ID_LENGTH, ITEM_LENGTH_LENGTH, RESULT_LENGTH,
-        next_byte_item_type,
-    },
+use crate::associate::{
+    AssociationItemType, CONTEXT_ID_LENGTH, ITEM_LENGTH_LENGTH, RESULT_LENGTH, next_byte_item_type,
 };
+use crate::pdu::{PDU_LENGTH_LENGTH, PDU_TYPE_LENGTH, PduType, read_padding, vec8_add_padding};
 
 /// Length of the presentation context item without the variable field.
 pub const PRESENTATION_CONTEXT_ITEM_NO_VARIABLE_FIELDS_LENGTH: u16 = 4;
@@ -209,8 +206,12 @@ impl PresentationContextItemBuilder {
 
 #[derive(Debug, Error)]
 pub enum SyntaxItemError {
-    #[error("Item type must be {:?} or {:?}", AssociationItemType::AbstractSyntax, AssociationItemType::TransferSyntax)]
-    InvalidItemType
+    #[error(
+        "Item type must be {:?} or {:?}",
+        AssociationItemType::AbstractSyntax,
+        AssociationItemType::TransferSyntax
+    )]
+    InvalidItemType,
 }
 
 #[derive(Debug, PartialEq)]
@@ -229,8 +230,7 @@ impl SyntaxItem {
     /// * `item_type` - Must be [AssociationItemType::AbstractSyntax] or [AssociationItemType::TransferSyntax].
     pub fn new(item_type: AssociationItemType, syntax: &str) -> Result<Self, SyntaxItemError> {
         match item_type {
-            AssociationItemType::AbstractSyntax
-            | AssociationItemType::TransferSyntax => {}
+            AssociationItemType::AbstractSyntax | AssociationItemType::TransferSyntax => {}
             _ => {
                 return Err(SyntaxItemError::InvalidItemType);
             }
@@ -401,7 +401,9 @@ pub(crate) fn serialize_syntax_item(item: &SyntaxItem) -> Vec<u8> {
 /// # Errors
 /// - Returns an error if the reader does not contain enough bytes (4 + Item Length).
 /// - Returns an error if [AssociationItemType] is invalid.
-pub(crate) fn deserialize_syntax_item<T: Read>(reader: &mut T) -> Result<SyntaxItem, PduDeserializationError> {
+pub(crate) fn deserialize_syntax_item<T: Read>(
+    reader: &mut T,
+) -> Result<SyntaxItem, PduDeserializationError> {
     let mut item_type = [0u8; PDU_TYPE_LENGTH];
     reader.read_exact(&mut item_type)?;
 
@@ -423,7 +425,6 @@ pub(crate) fn deserialize_syntax_item<T: Read>(reader: &mut T) -> Result<SyntaxI
     )?)
 }
 
-
 #[cfg(test)]
 mod tests {
     use std::io::Cursor;
@@ -439,23 +440,22 @@ mod tests {
     #[test]
     fn test_syntax_item_length() {
         let mut data = vec![
-            0x40, 0x00,
-            0x00, 0x11,
-            0x31, 0x2e, 0x32, 0x2e,
-            0x38, 0x34, 0x30, 0x2e,
-            0x31, 0x30, 0x30, 0x30,
-            0x38, 0x2e, 0x31, 0x2e,
-            0x32,
+            0x40, 0x00, 0x00, 0x11, 0x31, 0x2e, 0x32, 0x2e, 0x38, 0x34, 0x30, 0x2e, 0x31, 0x30,
+            0x30, 0x30, 0x38, 0x2e, 0x31, 0x2e, 0x32,
         ];
 
-        let item = SyntaxItem::new(AssociationItemType::TransferSyntax, "1.2.840.10008.1.1").unwrap();
+        let item =
+            SyntaxItem::new(AssociationItemType::TransferSyntax, "1.2.840.10008.1.1").unwrap();
         assert_eq!(item.item_length(), data.len() as u32);
     }
 
     #[test]
     fn test_syntax_item_new_err() {
         assert!(matches!(
-            SyntaxItem::new(AssociationItemType::PresentationContextAc, "1.2.840.10008.1.1"),
+            SyntaxItem::new(
+                AssociationItemType::PresentationContextAc,
+                "1.2.840.10008.1.1"
+            ),
             Err(SyntaxItemError::InvalidItemType)
         ));
         assert!(matches!(
@@ -467,16 +467,12 @@ mod tests {
     #[test]
     fn test_deserialize_syntax_item_ok() {
         let mut data = Cursor::new(vec![
-            0x40, 0x00,
-            0x00, 0x11,
-            0x31, 0x2e, 0x32, 0x2e,
-            0x38, 0x34, 0x30, 0x2e,
-            0x31, 0x30, 0x30, 0x30,
-            0x38, 0x2e, 0x31, 0x2e,
-            0x32,
+            0x40, 0x00, 0x00, 0x11, 0x31, 0x2e, 0x32, 0x2e, 0x38, 0x34, 0x30, 0x2e, 0x31, 0x30,
+            0x30, 0x30, 0x38, 0x2e, 0x31, 0x2e, 0x32,
         ]);
 
-        let item = SyntaxItem::new(AssociationItemType::TransferSyntax, "1.2.840.10008.1.2").unwrap();
+        let item =
+            SyntaxItem::new(AssociationItemType::TransferSyntax, "1.2.840.10008.1.2").unwrap();
 
         assert_eq!(item, deserialize_syntax_item(&mut data).unwrap());
     }
@@ -484,13 +480,8 @@ mod tests {
     #[test]
     fn test_deserialize_syntax_item_invalid_type() {
         let mut data = Cursor::new(vec![
-            0x10, 0x00,
-            0x00, 0x11,
-            0x31, 0x2e, 0x32, 0x2e,
-            0x38, 0x34, 0x30, 0x2e,
-            0x31, 0x30, 0x30, 0x30,
-            0x38, 0x2e, 0x31, 0x2e,
-            0x32,
+            0x10, 0x00, 0x00, 0x11, 0x31, 0x2e, 0x32, 0x2e, 0x38, 0x34, 0x30, 0x2e, 0x31, 0x30,
+            0x30, 0x30, 0x38, 0x2e, 0x31, 0x2e, 0x32,
         ]);
 
         assert!(matches!(
@@ -504,12 +495,8 @@ mod tests {
     #[test]
     fn test_deserialize_syntax_item_invalid_length() {
         let mut data = Cursor::new(vec![
-            0x40, 0x00,
-            0x00, 0x11,
-            0x31, 0x2e, 0x32, 0x2e,
-            0x38, 0x34, 0x30, 0x2e,
-            0x31, 0x30, 0x30, 0x30,
-            0x38, 0x2e, 0x31, 0x2e,
+            0x40, 0x00, 0x00, 0x11, 0x31, 0x2e, 0x32, 0x2e, 0x38, 0x34, 0x30, 0x2e, 0x31, 0x30,
+            0x30, 0x30, 0x38, 0x2e, 0x31, 0x2e,
         ]);
 
         assert!(matches!(
@@ -521,13 +508,8 @@ mod tests {
     #[test]
     fn test_serialize_syntax_item_ok() {
         let mut data = vec![
-            0x40, 0x00,
-            0x00, 0x11,
-            0x31, 0x2e, 0x32, 0x2e,
-            0x38, 0x34, 0x30, 0x2e,
-            0x31, 0x30, 0x30, 0x30,
-            0x38, 0x2e, 0x31, 0x2e,
-            0x32,
+            0x40, 0x00, 0x00, 0x11, 0x31, 0x2e, 0x32, 0x2e, 0x38, 0x34, 0x30, 0x2e, 0x31, 0x30,
+            0x30, 0x30, 0x38, 0x2e, 0x31, 0x2e, 0x32,
         ];
 
         assert_eq!(
@@ -540,7 +522,8 @@ mod tests {
 
     #[test]
     fn test_syntax_item_deserialize_serialize_cycle() {
-        let item = SyntaxItem::new(AssociationItemType::TransferSyntax, "1.2.840.10008.1.2").unwrap();
+        let item =
+            SyntaxItem::new(AssociationItemType::TransferSyntax, "1.2.840.10008.1.2").unwrap();
         let serialized = serialize_syntax_item(&item);
         let deserialized_item = deserialize_syntax_item(&mut Cursor::new(serialized)).unwrap();
 

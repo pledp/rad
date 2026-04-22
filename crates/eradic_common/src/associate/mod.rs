@@ -4,14 +4,12 @@ pub mod rj;
 mod rq_ac;
 mod user_information;
 
-use thiserror::{Error};
+use thiserror::Error;
 
-pub use abort::*;
 pub use rq_ac::*;
 pub use user_information::*;
 
 use crate::Result;
-use rj::{AcseReason, RejectReason, RejectSource};
 
 /// Length of the Item length field.
 pub(self) const ITEM_LENGTH_LENGTH: usize = 2;
@@ -21,21 +19,6 @@ pub(self) const CONTEXT_ID_LENGTH: usize = 1;
 
 /// Length of the Result/Reason field.
 pub(self) const RESULT_LENGTH: usize = 1;
-
-fn service_provider_rq_pdu_validation(
-    pdu: &AssociateRqAcPdu,
-) -> Option<(RejectedAssociationResult, RejectReason)> {
-    let source = RejectSource::Acse;
-
-    if pdu.protocol_version != 1 {
-        return Some((
-            RejectedAssociationResult::RejectedPermanent,
-            RejectReason::Acse(AcseReason::ProtocolNotSupported),
-        ));
-    }
-
-    todo!();
-}
 
 #[derive(Debug)]
 pub enum RejectedAssociationResult {
@@ -103,5 +86,5 @@ pub enum PduDeserializationError {
     #[error(transparent)]
     InvalidLength(#[from] std::io::Error),
     #[error(transparent)]
-    InvalidEncoding(#[from] std::string::FromUtf8Error)
+    InvalidEncoding(#[from] std::string::FromUtf8Error),
 }
