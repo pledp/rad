@@ -4,7 +4,7 @@ use tokio::sync::{Mutex};
 
 use async_trait::async_trait;
 
-use eradic_common::event::Command;
+use eradic_common::{event::Command, service::PresentationContextDefinitionResultList};
 use tokio::sync::mpsc;
 
 use eradic_common::{
@@ -12,7 +12,7 @@ use eradic_common::{
         RejectedAssociationResult, presentation_context::PresentationContextResult, rj::{AcseReason, PresentationReason, RejectReason, RejectSource, ServiceUserReason}
     }, event::Event, service::{
         AcceptedAssociateRequestResponse, AssociateRequestIndication, AssociateRequestResponse,
-        RejectedAssociateRequestResponse, presentation_context_definition_list_with_result
+        RejectedAssociateRequestResponse
     }
 };
 
@@ -32,14 +32,18 @@ struct Pacs {}
 impl ApplicationEntity for Pacs {
     fn handle_associate_request(
         &self,
-        indication: AssociateRequestIndication,
+        mut indication: AssociateRequestIndication,
     ) -> Event {
-        let presentation_context_result = vec![
-            presentation_context_definition_list_with_result(
-                &indication.presentation_context[0],
-                PresentationContextResult::Acceptance
-            )
-        ];
+        let presentation_context_result = indication
+            .presentation_context
+            .into_iter()
+            .map(|ctx| {
+                PresentationContextDefinitionResultList::from_definition_list(
+                    ctx,
+                    PresentationContextResult::Acceptance
+                )
+            })
+            .collect();
 
         Event::AssociateResponsePrimitiveAccept(AcceptedAssociateRequestResponse {
             context_name: indication.context_name,

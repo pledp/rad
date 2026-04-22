@@ -95,7 +95,7 @@ impl AssociateRqAcPdu {
             presentation_context_items.push(PresentationContextItemBuilder::new()
                 .item_type(AssociationItemType::PresentationContextAc)
                 .context_id(context.context_id)
-                .result(context.result.unwrap())
+                .result(context.result)
                 .add_transfer_syntax(
                     SyntaxItemBuilder::new()
                         .item_type(AssociationItemType::TransferSyntax)
@@ -149,7 +149,7 @@ impl AssociateRqAcPdu {
                 .abstract_syntax_item(
                     SyntaxItemBuilder::new()
                         .item_type(AssociationItemType::AbstractSyntax)
-                        .syntax(context.abstract_syntax.clone().unwrap())
+                        .syntax(context.abstract_syntax.clone())
                         .build()?,
                 );
 

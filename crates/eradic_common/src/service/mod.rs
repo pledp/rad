@@ -1,7 +1,9 @@
 use std::net::IpAddr;
+use std::ops::Not;
 use std::result;
 
-use crate::Result;
+use thiserror::Error;
+
 use crate::associate::RejectedAssociationResult;
 use crate::associate::presentation_context::{PresentationContextResult, SyntaxItem};
 use crate::associate::rj::ServiceUserReason;
@@ -83,20 +85,54 @@ impl AssociateRequestIndication {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct PresentationContextDefinitionList {
     pub context_id: u8,
-    pub abstract_syntax: Option<String>,
+    pub abstract_syntax: String,
     pub transfer_syntax: Vec<String>,
-    pub result: Option<PresentationContextResult>,
 }
 
 impl PresentationContextDefinitionList {
     pub fn new(
         context_id: u8,
-        abstract_syntax: Option<String>,
+        abstract_syntax: String,
         transfer_syntax: Vec<String>,
-        result: Option<PresentationContextResult>,
+    ) -> Self {
+        Self {
+            context_id,
+            abstract_syntax,
+            transfer_syntax,
+        }
+    }
+
+    /// Create [PresentationContextDefinitionList] from [PresentationContextItem]
+    pub fn from_presentation_context_item(item: &PresentationContextItem) -> Self {
+        Self {
+            context_id: item.context_id,
+            abstract_syntax: item.abstract_syntax().unwrap().to_string(),
+            transfer_syntax: item
+                .transfer_syntax()
+                .iter()
+                .map(|s| s.to_string())
+                .collect(),
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct PresentationContextDefinitionResultList {
+    pub context_id: u8,
+    pub abstract_syntax: String,
+    pub transfer_syntax: Vec<String>,
+    pub result: PresentationContextResult,
+}
+
+impl PresentationContextDefinitionResultList {
+    pub fn new(
+        context_id: u8,
+        abstract_syntax: String,
+        transfer_syntax: Vec<String>,
+        result: PresentationContextResult
     ) -> Self {
         Self {
             context_id,
@@ -106,39 +142,31 @@ impl PresentationContextDefinitionList {
         }
     }
 
-    /// Create [PresentationContextDefinitionList] from [PresentationContextItem]
-    pub fn from_presentation_context_item(item: &PresentationContextItem) -> Self {
+    pub fn from_definition_list(list: PresentationContextDefinitionList, result: PresentationContextResult) -> Self {
         Self {
-            context_id: item.context_id,
-            abstract_syntax: Some(item.abstract_syntax().unwrap().to_string()),
-            transfer_syntax: item
-                .transfer_syntax()
-                .iter()
-                .map(|s| s.to_string())
-                .collect(),
-            result: item.result
+            context_id: list.context_id,
+            abstract_syntax: list.abstract_syntax,
+            transfer_syntax: list.transfer_syntax,
+            result
         }
     }
 }
 
-/// Creates a [PresentationContextDefinitionList] with result from a [PresentationContextDefinitionList]
-pub fn presentation_context_definition_list_with_result(
-    context: &PresentationContextDefinitionList,
-    result: PresentationContextResult
-) -> PresentationContextDefinitionList {
-    PresentationContextDefinitionList::new(
-        context.context_id,
-        context.abstract_syntax.clone(),
-        context.transfer_syntax.clone(),
-        Some(result)
-    )
+
+#[derive(Debug, Error, PartialEq, Eq)]
+pub enum PresentationContextDefinitionListBuilderError {
+    #[error("PresentationContextDefinitionList must have atleast one trasnfer syntax")]
+    NoTransferSyntax,
+    #[error("PresentationContextDefinitionList must have atleast one trasnfer syntax")]
+    NoAbstractSyntax,
+    #[error("PresentationContextDefinitionList must have a context_id")]
+    NoContextId
 }
 
 pub struct PresentationContextDefinitionListBuilder {
     context_id: Option<u8>,
     abstract_syntax_item: Option<String>,
     transfer_syntax_items: Vec<String>,
-    result: Option<PresentationContextResult>,
 }
 
 impl PresentationContextDefinitionListBuilder {
@@ -147,13 +175,7 @@ impl PresentationContextDefinitionListBuilder {
             context_id: None,
             abstract_syntax_item: None,
             transfer_syntax_items: Vec::new(),
-            result: None,
         }
-    }
-
-    pub fn result(mut self, result: PresentationContextResult) -> Self {
-        self.result = Some(result);
-        self
     }
 
     pub fn context_id(mut self, context_id: u8) -> Self {
@@ -176,12 +198,15 @@ impl PresentationContextDefinitionListBuilder {
         self
     }
 
-    pub fn build(self) -> Result<PresentationContextDefinitionList> {
+    pub fn build(self) -> Result<PresentationContextDefinitionList, PresentationContextDefinitionListBuilderError> {
+        if self.transfer_syntax_items.is_empty() {
+            return Err(PresentationContextDefinitionListBuilderError::NoTransferSyntax);
+        }
+
         Ok(PresentationContextDefinitionList::new(
-            self.context_id.unwrap(),
-            self.abstract_syntax_item,
-            self.transfer_syntax_items,
-            self.result,
+            self.context_id.ok_or(PresentationContextDefinitionListBuilderError::NoContextId)?,
+            self.abstract_syntax_item.ok_or(PresentationContextDefinitionListBuilderError::NoAbstractSyntax)?,
+            self.transfer_syntax_items
         ))
     }
 }
@@ -198,11 +223,27 @@ pub struct AcceptedAssociateRequestResponse {
     pub called_ae: String,
     pub calling_ae: String,
     pub user_information: Vec<UserInformation>,
-    pub presentation_context_result: Vec<PresentationContextDefinitionList>,
+    pub presentation_context_result: Vec<PresentationContextDefinitionResultList>,
 }
 
 impl AcceptedAssociateRequestResponse {
-    pub fn presentation_context_result(&self) -> &Vec<PresentationContextDefinitionList> {
+    pub fn new(
+        context_name: String,
+        called_ae: String,
+        calling_ae: String,
+        user_information: Vec<UserInformation>,
+        presentation_context_result: Vec<PresentationContextDefinitionResultList>
+    ) -> Self {
+        Self {
+            context_name,
+            called_ae,
+            calling_ae,
+            user_information,
+            presentation_context_result
+        }
+    }
+
+    pub fn presentation_context_result(&self) -> &Vec<PresentationContextDefinitionResultList> {
         &self.presentation_context_result
     }
 
@@ -220,5 +261,115 @@ pub struct RejectedAssociateRequestResponse {
 impl RejectedAssociateRequestResponse {
     pub fn new(diagnostic: Option<ServiceUserReason>, result: RejectedAssociationResult) -> Self {
         Self { diagnostic, result }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::string::String;
+
+
+    use crate::service::{PresentationContextDefinitionList, PresentationContextDefinitionListBuilder, PresentationContextDefinitionListBuilderError, PresentationContextDefinitionResultList};
+    use crate::associate::presentation_context::PresentationContextResult;
+
+    #[test]
+    fn test_presentation_context_definition_result_list() {
+        let definition_list_id = 1;
+        let definition_list_abstract = String::from("1.2.840.10008.1.1");
+        let definition_list_transfer = vec![
+            String::from("1.2.840.10008.1.2")
+        ];
+
+        let definition_list = PresentationContextDefinitionList::new(
+            definition_list_id.clone(),
+            definition_list_abstract.clone(),
+            definition_list_transfer.clone()
+        );
+
+        let result = PresentationContextResult::Acceptance;
+        let result_list = PresentationContextDefinitionResultList::from_definition_list(
+            definition_list,
+            result.clone()
+        );
+
+        assert_eq!(result_list.context_id, definition_list_id);
+        assert_eq!(result_list.abstract_syntax, definition_list_abstract);
+        assert_eq!(result_list.transfer_syntax, definition_list_transfer);
+        assert_eq!(result_list.result, result);
+    }
+
+    #[test]
+    fn test_definition_list_builder_ok() {
+        let result = PresentationContextDefinitionListBuilder::new()
+            .context_id(1)
+            .abstract_syntax("1.2.840".to_string())
+            .add_transfer_syntax("ts1".to_string())
+            .build()
+            .unwrap();
+
+        assert_eq!(result.context_id, 1);
+        assert_eq!(result.abstract_syntax, "1.2.840");
+        assert_eq!(result.transfer_syntax, vec!["ts1"]);
+    }
+
+    #[test]
+    fn test_definition_list_builder_multiple_transfer_ok() {
+        let result = PresentationContextDefinitionListBuilder::new()
+            .context_id(1)
+            .abstract_syntax("1.2.840".to_string())
+            .add_transfer_syntax("ts1".to_string())
+            .add_transfer_syntax("ts2".to_string())
+            .build()
+            .unwrap();
+
+        assert_eq!(result.context_id, 1);
+        assert_eq!(result.abstract_syntax, "1.2.840");
+        assert_eq!(result.transfer_syntax, vec!["ts1", "ts2"]);
+    }
+
+    #[test]
+    fn test_definition_list_builder_transfer_syntax_overrides_previous() {
+        let result = PresentationContextDefinitionListBuilder::new()
+            .context_id(3)
+            .abstract_syntax("abc".to_string())
+            .add_transfer_syntax("old".to_string())
+            .transfer_syntax(vec!["new1".to_string(), "new2".to_string()])
+            .build()
+            .unwrap();
+
+        assert_eq!(result.transfer_syntax, vec!["new1", "new2"]);
+    }
+
+    #[test]
+    fn test_definition_list_builder_missing_context() {
+        assert!(matches!(
+            PresentationContextDefinitionListBuilder::new()
+                .abstract_syntax("1.2.840".to_string())
+                .add_transfer_syntax("ts1".to_string())
+                .build(),
+            Err(PresentationContextDefinitionListBuilderError::NoContextId)
+        ));
+    }
+
+    #[test]
+    fn test_definition_list_builder_missing_abstract_syntax() {
+        assert!(matches!(
+            PresentationContextDefinitionListBuilder::new()
+                .context_id(1)
+                .add_transfer_syntax("ts1".to_string())
+                .build(),
+            Err(PresentationContextDefinitionListBuilderError::NoAbstractSyntax)
+        ));
+    }
+
+    #[test]
+    fn test_definition_list_builder_missing_transfer_syntax() {
+        assert!(matches!(
+            PresentationContextDefinitionListBuilder::new()
+                .context_id(1)
+                .abstract_syntax("1.2.840".to_string())
+                .build(),
+            Err(PresentationContextDefinitionListBuilderError::NoTransferSyntax)
+        ));
     }
 }
