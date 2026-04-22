@@ -12,13 +12,13 @@ pub use user_information::*;
 use crate::Result;
 
 /// Length of the Item length field.
-pub(self) const ITEM_LENGTH_LENGTH: usize = 2;
+const ITEM_LENGTH_LENGTH: usize = 2;
 
 /// Length of the Presentation Context ID field of the Presentation Context Item.
-pub(self) const CONTEXT_ID_LENGTH: usize = 1;
+const CONTEXT_ID_LENGTH: usize = 1;
 
 /// Length of the Result/Reason field.
-pub(self) const RESULT_LENGTH: usize = 1;
+const RESULT_LENGTH: usize = 1;
 
 #[derive(Debug)]
 pub enum RejectedAssociationResult {

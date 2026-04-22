@@ -7,7 +7,7 @@ use crate::associate::PduDeserializationError;
 use crate::associate::{
     AssociationItemType, CONTEXT_ID_LENGTH, ITEM_LENGTH_LENGTH, RESULT_LENGTH, next_byte_item_type,
 };
-use crate::pdu::{PDU_LENGTH_LENGTH, PDU_TYPE_LENGTH, PduType, read_padding, vec8_add_padding};
+use crate::pdu::{PDU_TYPE_LENGTH, read_padding, vec8_add_padding};
 
 /// Length of the presentation context item without the variable field.
 pub const PRESENTATION_CONTEXT_ITEM_NO_VARIABLE_FIELDS_LENGTH: u16 = 4;
@@ -41,7 +41,7 @@ impl PresentationContextItem {
                 result.unwrap(),
                 transfer_syntax_items,
             )),
-            _ => return Err("Invalid type".into()),
+            _ => Err("Invalid type".into()),
         }
     }
 
@@ -194,13 +194,13 @@ impl PresentationContextItemBuilder {
     }
 
     pub fn build(self) -> crate::Result<PresentationContextItem> {
-        Ok(PresentationContextItem::new(
+        PresentationContextItem::new(
             self.item_type.unwrap(),
             self.context_id.unwrap(),
             self.result,
             self.abstract_syntax_item,
             self.transfer_syntax_items,
-        )?)
+        )
     }
 }
 
@@ -300,7 +300,7 @@ pub(crate) fn serialize_presentation_context_item(
     vec8_add_padding(&mut pdu, 1);
 
     // Add result if it exists
-    if let Some(result) = item.result.clone() {
+    if let Some(result) = item.result {
         pdu.push(result.into());
     } else {
         pdu.push(0xff);
@@ -309,11 +309,11 @@ pub(crate) fn serialize_presentation_context_item(
     vec8_add_padding(&mut pdu, 1);
 
     if let Some(item) = &item.abstract_syntax_item {
-        pdu.extend(serialize_syntax_item(&item));
+        pdu.extend(serialize_syntax_item(item));
     }
 
     for item in item.transfer_syntax_items.iter() {
-        pdu.extend(serialize_syntax_item(&item));
+        pdu.extend(serialize_syntax_item(item));
     }
 
     Ok(pdu)
@@ -391,7 +391,7 @@ pub(crate) fn serialize_syntax_item(item: &SyntaxItem) -> Vec<u8> {
     pdu.push(item.item_type.into());
     vec8_add_padding(&mut pdu, 1);
     pdu.extend_from_slice(&item.length.to_be_bytes());
-    pdu.extend_from_slice(&item.syntax().as_bytes());
+    pdu.extend_from_slice(item.syntax().as_bytes());
 
     pdu
 }

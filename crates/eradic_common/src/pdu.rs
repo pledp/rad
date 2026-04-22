@@ -1,9 +1,8 @@
 use std::convert::TryFrom;
 use std::io::Read;
-use std::string::String;
 
+use crate::Result;
 use crate::associate::AssociateRqAcPdu;
-use crate::{Error, Result};
 
 /// The length of the PDU-type field in the PDU. The Item Type field is the same in A-ASSOCIATION PDU's.
 pub(crate) const PDU_TYPE_LENGTH: usize = 1;
@@ -90,5 +89,5 @@ pub(crate) fn read_padding<R: Read>(reader: &mut R, n: usize) {
 }
 
 pub(crate) fn vec8_add_padding(pdu: &mut Vec<u8>, n: u32) {
-    pdu.extend(std::iter::repeat(0x00).take(n as usize));
+    pdu.extend(std::iter::repeat_n(0x00, n as usize));
 }

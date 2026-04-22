@@ -31,7 +31,6 @@ async fn main() -> Result<()> {
 
     // TODO: Builder
     let indication = AssociateRequestIndication::new(
-        // TODO: Application context enum?
         "1.2.840.10008.3.1.1.1".into(),
         "rad".into(),
         "test1".into(),

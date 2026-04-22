@@ -2,15 +2,8 @@ use std::io::{BufRead, BufReader, Read};
 
 use crate::Result;
 use crate::associate::AssociationItemType;
-use crate::associate::presentation_context::{
-    PresentationContextResult, SyntaxItemBuilder, deserialize_presentation_context_item,
-    serialize_presentation_context_item,
-};
-use crate::associate::{
-    ITEM_LENGTH_LENGTH, next_byte_item_type,
-    presentation_context::{PresentationContextItem, PresentationContextItemBuilder},
-};
-use crate::pdu::{PDU_LENGTH_LENGTH, PDU_TYPE_LENGTH, PduType, read_padding, vec8_add_padding};
+use crate::associate::ITEM_LENGTH_LENGTH;
+use crate::pdu::{PDU_TYPE_LENGTH, read_padding, vec8_add_padding};
 
 #[derive(Clone, Copy, Debug)]
 pub enum UserInformation {
@@ -87,7 +80,7 @@ pub fn serialize_user_info_item(item: &UserInfoItem) -> Result<Vec<u8>> {
     pdu.extend_from_slice(&item.length.to_be_bytes());
 
     for item in item.sub_items.iter() {
-        pdu.extend(serialize_sub_item(&item)?);
+        pdu.extend(serialize_sub_item(item)?);
     }
 
     Ok(pdu)

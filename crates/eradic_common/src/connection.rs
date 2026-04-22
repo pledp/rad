@@ -107,7 +107,7 @@ pub fn handle_server_event(
     conn: &UpperLayerAcceptorConnection,
     event: Event,
 ) -> Result<(Option<Command>, UpperLayerAcceptorConnection)> {
-    let mut new_state = conn.clone();
+    let mut new_state = *conn;
 
     let command = match event {
         Event::TransportConnectionIndication => {

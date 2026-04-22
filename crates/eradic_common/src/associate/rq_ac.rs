@@ -2,25 +2,21 @@ use std::fmt;
 use std::io::{BufRead, BufReader, Read};
 use std::string::String;
 
-use log::{debug, error, info, warn};
+use log::error;
 
 use crate::Result;
 use crate::associate::presentation_context::{
-    PresentationContextResult, SyntaxItemBuilder, deserialize_presentation_context_item,
-    serialize_presentation_context_item,
+    SyntaxItemBuilder, deserialize_presentation_context_item, serialize_presentation_context_item,
 };
 use crate::associate::user_information::{
-    UserInfoItem, UserInformationSubItem, deserialize_sub_item, deserialize_user_info_item,
-    serialize_sub_item, serialize_user_info_item,
+    UserInfoItem, UserInformationSubItem, deserialize_user_info_item, serialize_user_info_item,
 };
 use crate::associate::{
-    AssociationItemType, ITEM_LENGTH_LENGTH, MaximumLength, UserInformation, next_byte_item_type,
+    AssociationItemType, ITEM_LENGTH_LENGTH, next_byte_item_type,
     presentation_context::{PresentationContextItem, PresentationContextItemBuilder},
 };
 use crate::pdu::{PDU_LENGTH_LENGTH, PDU_TYPE_LENGTH, PduType, read_padding, vec8_add_padding};
-use crate::service::{
-    AcceptedAssociateRequestResponse, AssociateRequestIndication, AssociateRequestResponse,
-};
+use crate::service::{AcceptedAssociateRequestResponse, AssociateRequestIndication};
 
 /// Length of the Protocol Version field in a A-ASSOCIATE-RQ or A-ASSOCIATE-AC PDU
 const PROTOCOL_VERSION_LENGTH: usize = 2;
@@ -120,7 +116,7 @@ impl AssociateRqAcPdu {
         let mut user_info_sub_items = Vec::new();
 
         for user_info in response.user_information() {
-            user_info_sub_items.push(UserInformationSubItem::new(user_info.clone()));
+            user_info_sub_items.push(UserInformationSubItem::new(*user_info));
         }
 
         let user_info_item = UserInfoItem::new(user_info_sub_items);
@@ -179,7 +175,7 @@ impl AssociateRqAcPdu {
         let mut user_info_sub_items = Vec::new();
 
         for user_info in indication.user_information() {
-            user_info_sub_items.push(UserInformationSubItem::new(user_info.clone()));
+            user_info_sub_items.push(UserInformationSubItem::new(*user_info));
         }
 
         let user_info_item = UserInfoItem::new(user_info_sub_items);
@@ -218,7 +214,7 @@ impl AssociateRqAcPdu {
     }
 
     pub fn user_information(&self) -> &Vec<UserInformationSubItem> {
-        &self.user_info_item.sub_items()
+        self.user_info_item.sub_items()
     }
 }
 
@@ -240,14 +236,14 @@ pub fn serialize_association_pdu(request: &AssociateRqAcPdu) -> Result<Vec<u8>> 
     let len = ae.len().min(16);
 
     pdu.extend_from_slice(&ae[..len]);
-    pdu.extend(std::iter::repeat(0x20).take(16 - len));
+    pdu.extend(std::iter::repeat_n(0x20, 16 - len));
 
     // Calling application entity
     let ae = request.calling_ae().as_bytes();
     let len = ae.len().min(16);
 
     pdu.extend_from_slice(&ae[..len]);
-    pdu.extend(std::iter::repeat(0x20).take(16 - len));
+    pdu.extend(std::iter::repeat_n(0x20, 16 - len));
 
     vec8_add_padding(&mut pdu, 32);
 
@@ -373,7 +369,7 @@ fn serialize_application_context_item(item: &ApplicationContextItem) -> Result<V
     pdu.push(item.item_type.into());
     vec8_add_padding(&mut pdu, 1);
     pdu.extend_from_slice(&item.length.to_be_bytes());
-    pdu.extend_from_slice(&item.context_name.as_bytes());
+    pdu.extend_from_slice(item.context_name.as_bytes());
 
     Ok(pdu)
 }

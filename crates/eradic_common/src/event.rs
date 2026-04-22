@@ -1,7 +1,7 @@
 use crate::{
     associate::AssociateRqAcPdu,
     service::{
-        AcceptedAssociateRequestResponse, AssociateRequestIndication, AssociateRequestResponse,
+        AcceptedAssociateRequestResponse, AssociateRequestIndication,
         RejectedAssociateRequestResponse,
     },
 };

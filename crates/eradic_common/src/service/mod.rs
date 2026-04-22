@@ -1,15 +1,12 @@
 use std::net::IpAddr;
-use std::ops::Not;
-use std::result;
 
 use thiserror::Error;
 
 use crate::associate::RejectedAssociationResult;
-use crate::associate::presentation_context::{PresentationContextResult, SyntaxItem};
+use crate::associate::presentation_context::PresentationContextResult;
 use crate::associate::rj::ServiceUserReason;
 use crate::associate::{
-    AssociateRqAcPdu, MaximumLength, UserInformation, UserInformationSubItem,
-    presentation_context::PresentationContextItem,
+    AssociateRqAcPdu, UserInformation, presentation_context::PresentationContextItem,
 };
 
 /// DICOM ISO/TR 8509 request and indication primitive. Request and indication contain the same fields.
@@ -56,13 +53,13 @@ impl AssociateRequestIndication {
         let presentation_context = pdu
             .presentation_context_items()
             .iter()
-            .map(|item| PresentationContextDefinitionList::from_presentation_context_item(item))
+            .map(PresentationContextDefinitionList::from_presentation_context_item)
             .collect();
 
         let user_information = pdu
             .user_information()
             .iter()
-            .map(|item| item.inner().clone())
+            .map(|item| *item.inner())
             .collect();
 
         Self {
@@ -70,8 +67,8 @@ impl AssociateRequestIndication {
             called_ae: pdu.called_ae().to_string(),
             calling_ae: pdu.calling_ae().to_string(),
             user_information,
-            called_address: called_address.clone(),
-            calling_address: calling_address.clone(),
+            called_address: *called_address,
+            calling_address: *calling_address,
             presentation_context,
         }
     }

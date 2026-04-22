@@ -12,7 +12,7 @@ use std::fs::File;
 use std::io::{BufReader, Read};
 use std::path::Path;
 
-use crate::vr::{ValueRepresentation, is_16_bit_length};
+use crate::vr::ValueRepresentation;
 
 pub type Result<T> = std::result::Result<T, Error>;
 pub type Error = Box<dyn std::error::Error + Send + Sync>;
