@@ -59,7 +59,7 @@ impl fmt::Display for Error {
 
 impl std::error::Error for Error {}
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub struct AssociateRqAcPdu {
     pub pdu_type: PduType,
     pub length: u32,
@@ -334,7 +334,7 @@ pub fn deserialize_association_pdu<T: Read>(reader: &mut T) -> Result<AssociateR
 }
 
 // TODO: item_type struct
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub struct ApplicationContextItem {
     pub item_type: AssociationItemType,
     pub length: u16,

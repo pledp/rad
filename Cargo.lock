@@ -70,6 +70,7 @@ dependencies = [
  "async-trait",
  "eradic_adaptor",
  "eradic_common",
+ "thiserror",
  "tokio",
  "tokio-util",
  "tracing",

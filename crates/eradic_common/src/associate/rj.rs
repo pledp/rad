@@ -12,7 +12,7 @@ pub enum RejectReason {
     Presentation(PresentationReason),
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub enum ServiceUserReason {
     NoReason,
     ApplicationContextNameNotSupported,

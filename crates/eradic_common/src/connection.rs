@@ -34,7 +34,7 @@ pub struct UpperLayerAcceptorConnection {
     calling_address: Option<IpAddr>,
 }
 
-// TODO: Remove new_client, create UpperLayerRequestorConnection
+// TODO: Remove new_client, create UpperLayerRequestorConnection, remove Option<>
 impl UpperLayerAcceptorConnection {
     pub fn new_client() -> Self {
         Self::new_no_assoc()
@@ -126,20 +126,11 @@ pub fn handle_server_event(
 
             Some(Command::AssociationIndication(indication))
         }
+
         Event::AssociateResponsePrimitiveAccept(prim) => {
             new_state.state = UpperLayerConnectionState::DataTransfer;
 
             Some(Command::AssociateAcceptPdu(prim))
-        }
-        Event::AssociateRequestPrimitive(indication) => {
-            new_state.state = UpperLayerConnectionState::WaitingForOpenConnection;
-
-            Some(Command::OpenConnection)
-        }
-        Event::ConnectionOpen => {
-            new_state.state = UpperLayerConnectionState::WaitingForAcRjPdu;
-
-            Some(Command::AssociateRequestPdu)
         }
 
         _ => {
@@ -172,6 +163,7 @@ impl UpperLayerRequestorConnection {
 
     pub fn handle_event(&mut self, event: Event) -> Result<Option<Command>> {
         let command = match event {
+            // TODO: ConnectionOpen event with Request?
             Event::ConnectionOpen => {
                 self.state = UpperLayerConnectionState::WaitingForAcRjPdu;
 

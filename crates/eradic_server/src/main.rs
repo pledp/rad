@@ -29,9 +29,9 @@ use eradic_common::pdu::{DeserializedPdu, PDU_HEADER_LENGTH, PduType, read_pdu_h
 
 use eradic_common::service::AssociateRequestResponse;
 
-use eradic_adaptor::{UpperLayerServiceUser, UpperLayerServiceUserAsync};
+use eradic_adaptor::UpperLayerServiceUserConnection;
 
-use crate::service_user::ServiceUser;
+use crate::service_user::ServiceUsers;
 
 pub type Result<T> = std::result::Result<T, Error>;
 pub type Error = Box<dyn std::error::Error + Send + Sync>;
@@ -53,19 +53,16 @@ async fn main() -> Result<()> {
     let server = TcpListener::bind("127.0.0.1:104").await?;
     info!("Listening for connections...");
 
-    let service_user = Arc::new(Mutex::new(ServiceUser::new()));
-
     let client_count = Arc::new(AtomicI64::new(0));
 
     loop {
         let (tcp, socket_addr) = server.accept().await?;
-        let service_user_clone = Arc::clone(&service_user);
         let client_count_clone = Arc::clone(&client_count);
 
         tokio::spawn(async move {
             client_count_clone.fetch_add(1, Ordering::AcqRel);
 
-            let result = handle_client(tcp, socket_addr, service_user_clone).await;
+            let result = handle_client(tcp, socket_addr).await;
 
             client_count_clone.fetch_sub(1, Ordering::AcqRel);
 
@@ -76,15 +73,7 @@ async fn main() -> Result<()> {
     Ok(())
 }
 
-enum error {
-    some,
-}
-
-async fn handle_client<U: UpperLayerServiceUser + Send + 'static>(
-    tcp: TcpStream,
-    socket_addr: SocketAddr,
-    service_user: Arc<Mutex<U>>,
-) -> Result<()> {
+async fn handle_client(tcp: TcpStream, socket_addr: SocketAddr) -> Result<()> {
     let span = span!(Level::INFO, "connection",
         ip = %socket_addr.ip(),
         port = socket_addr.port()
@@ -113,33 +102,32 @@ async fn handle_client<U: UpperLayerServiceUser + Send + 'static>(
     let event_tx_user = event_tx.clone();
     let user_task = tokio::spawn(
         async move {
+            let mut conn: Option<Box<dyn UpperLayerServiceUserConnection>> = None;
+
             loop {
                 info!("Starting user task");
                 let command = user_rx.recv().await.unwrap();
                 info!("User task: Command received");
 
-                let service_user_clone = service_user.clone();
-                let event_tx_clone = event_tx_user.clone();
+                match command {
+                    Command::AssociationIndication(indication) => {
+                        info!("User task: Received Command::AssociationIndication");
 
-                tokio::spawn(
-                    async move {
-                        info!("User task: Awaiting for lock...");
-                        let mut guard = service_user_clone.lock().await;
+                        info!("User task: Creating SCU connection");
+                        conn = Some(
+                            ServiceUsers::create_scu_connection(&indication.called_ae).unwrap(),
+                        );
 
-                        match command {
-                            Command::AssociationIndication(pdu) => {
-                                info!("User task: Received Command::AssociationIndication");
+                        let event = if let Some(c) = conn.as_mut() {
+                            c.handle_associate_request(indication)
+                        } else {
+                            todo!()
+                        };
 
-                                let event = guard.handle_associate_request(pdu);
-                                event_tx_clone.send(event).await;
-                            }
-                            _ => {
-                                todo!();
-                            }
-                        }
+                        event_tx_user.send(event).await;
                     }
-                    .instrument(tracing::Span::current()),
-                );
+                    _ => todo!(),
+                }
             }
         }
         .instrument(tracing::Span::current()),

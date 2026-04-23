@@ -7,7 +7,7 @@ use crate::{
 };
 
 /// DICOM standard events
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub enum Event {
     TransportConnectionIndication,
     ConnectionOpen,

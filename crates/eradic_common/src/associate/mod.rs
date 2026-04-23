@@ -20,7 +20,7 @@ const CONTEXT_ID_LENGTH: usize = 1;
 /// Length of the Result/Reason field.
 const RESULT_LENGTH: usize = 1;
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub enum RejectedAssociationResult {
     RejectedPermanent,
     RejectedTransient,

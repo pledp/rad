@@ -12,7 +12,7 @@ use crate::associate::{
 /// DICOM ISO/TR 8509 request and indication primitive. Request and indication contain the same fields.
 ///
 /// Indicates a request to establish an association or a request PDU via TCP.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct AssociateRequestIndication {
     pub context_name: String,
     pub called_ae: String,
@@ -112,7 +112,7 @@ impl PresentationContextDefinitionList {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct PresentationContextDefinitionResultList {
     pub context_id: u8,
     pub abstract_syntax: String,
@@ -211,13 +211,13 @@ impl PresentationContextDefinitionListBuilder {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub enum AssociateRequestResponse {
     Accepted(AcceptedAssociateRequestResponse),
     Rejected(RejectedAssociateRequestResponse),
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub struct AcceptedAssociateRequestResponse {
     pub context_name: String,
     pub called_ae: String,
@@ -252,7 +252,7 @@ impl AcceptedAssociateRequestResponse {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub struct RejectedAssociateRequestResponse {
     pub diagnostic: Option<ServiceUserReason>,
     pub result: RejectedAssociationResult,

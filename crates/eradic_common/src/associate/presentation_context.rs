@@ -12,7 +12,7 @@ use crate::pdu::{PDU_TYPE_LENGTH, read_padding, vec8_add_padding};
 /// Length of the presentation context item without the variable field.
 pub const PRESENTATION_CONTEXT_ITEM_NO_VARIABLE_FIELDS_LENGTH: u16 = 4;
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub struct PresentationContextItem {
     pub item_type: AssociationItemType,
     pub length: u16,

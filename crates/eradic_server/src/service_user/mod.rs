@@ -1,10 +1,8 @@
 use std::collections::HashMap;
-use std::sync::Arc;
-use tokio::sync::Mutex;
+
+use thiserror::Error;
 
 use eradic_common::service::PresentationContextDefinitionResultList;
-use tokio::sync::mpsc;
-
 use eradic_common::{
     associate::{
         RejectedAssociationResult, presentation_context::PresentationContextResult,
@@ -17,18 +15,14 @@ use eradic_common::{
     },
 };
 
-use eradic_adaptor::{UpperLayerServiceUser, UpperLayerServiceUserAsync};
+use eradic_adaptor::UpperLayerServiceUserConnection;
 
-pub type ApplicationEntityRegistry = HashMap<String, Box<dyn ApplicationEntity>>;
-
-trait ApplicationEntity: Send + Sync {
-    fn handle_associate_request(&self, indication: AssociateRequestIndication) -> Event;
-}
+pub type ApplicationEntityRegistry = Vec<String>;
 
 struct Pacs {}
 
-impl ApplicationEntity for Pacs {
-    fn handle_associate_request(&self, indication: AssociateRequestIndication) -> Event {
+impl UpperLayerServiceUserConnection for Pacs {
+    fn handle_associate_request(&mut self, indication: AssociateRequestIndication) -> Event {
         let presentation_context_result = indication
             .presentation_context
             .into_iter()
@@ -50,56 +44,27 @@ impl ApplicationEntity for Pacs {
     }
 }
 
-pub struct ServiceUser {
-    application_entities: ApplicationEntityRegistry,
+#[derive(Debug, Error, PartialEq, Eq)]
+pub enum ServiceUserError {
+    #[error("Service User / Application Entity was not ")]
+    ServiceUserNotFound,
 }
 
-impl ServiceUser {
+pub struct ServiceUsers {
+    //application_entities: ApplicationEntityRegistry,
+}
+
+impl ServiceUsers {
     pub fn new() -> Self {
-        let mut application_entities: ApplicationEntityRegistry = HashMap::new();
-        application_entities.insert("rad".into(), Box::new(Pacs {}));
+        Self {}
+    }
 
-        Self {
-            application_entities,
+    pub fn create_scu_connection(
+        ae: &str,
+    ) -> Result<Box<dyn UpperLayerServiceUserConnection>, ServiceUserError> {
+        match ae {
+            "rad" => Ok(Box::new(Pacs {})),
+            _ => Err(ServiceUserError::ServiceUserNotFound),
         }
-    }
-}
-
-impl UpperLayerServiceUser for ServiceUser {
-    fn handle_associate_request(&mut self, indication: AssociateRequestIndication) -> Event {
-        let result = self
-            .application_entities
-            .get(&indication.called_ae)
-            .map(|ae| ae.handle_associate_request(indication));
-
-        match result {
-            Some(result) => result,
-            None => Event::AssociateResponsePrimitiveReject(RejectedAssociateRequestResponse::new(
-                Some(ServiceUserReason::CalledAeNotRecognized),
-                RejectedAssociationResult::RejectedPermanent,
-            )),
-        }
-    }
-}
-
-pub struct UpperLayerServiceProviderConnection<U: UpperLayerServiceUser> {
-    service_user: Arc<Mutex<U>>,
-}
-
-impl<U: UpperLayerServiceUser> UpperLayerServiceProviderConnection<U> {
-    pub fn new(service_user: Arc<Mutex<U>>) -> Self {
-        Self { service_user }
-    }
-
-    pub async fn handle_associate_request(
-        &mut self,
-        indication: AssociateRequestIndication,
-        event_tx: &mut mpsc::Sender<Event>,
-    ) {
-        let mut guard = self.service_user.lock().await;
-
-        let response = guard.handle_associate_request(indication);
-
-        event_tx.send(response).await;
     }
 }
