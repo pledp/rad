@@ -2,7 +2,7 @@ use std::net::IpAddr;
 
 use crate::{
     event::{Command, Event},
-    service::AssociateRequestIndication,
+    service::{AbortIndication, AssociateRequestIndication},
 };
 
 use crate::Result;
@@ -76,7 +76,7 @@ impl UpperLayerAcceptorConnection {
                     &self.calling_address.unwrap(),
                 );
 
-                Some(Command::AssociationIndication(indication))
+                Some(Command::AssociateIndication(indication))
             }
             Event::AssociateResponsePrimitiveAccept(prim) => {
                 self.state = UpperLayerConnectionState::DataTransfer;
@@ -124,7 +124,7 @@ pub fn handle_server_event(
                 &new_state.calling_address.unwrap(),
             );
 
-            Some(Command::AssociationIndication(indication))
+            Some(Command::AssociateIndication(indication))
         }
 
         Event::AssociateResponsePrimitiveAccept(prim) => {
@@ -136,7 +136,7 @@ pub fn handle_server_event(
         Event::AssociateAbortPdu(pdu) => {
             new_state.state = UpperLayerConnectionState::Idle;
 
-            Some(Command::AbortIndication)
+            Some(Command::AbortIndication(AbortIndication::from_pdu(pdu)))
         }
 
         _ => {

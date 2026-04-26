@@ -5,7 +5,7 @@ use thiserror::Error;
 use eradic_common::service::PresentationContextDefinitionResultList;
 use eradic_common::{
     associate::{
-        RejectedAssociationResult, presentation_context::PresentationContextResult,
+        RejectedAssociateResult, presentation_context::PresentationContextResult,
         rj::ServiceUserReason,
     },
     event::Event,

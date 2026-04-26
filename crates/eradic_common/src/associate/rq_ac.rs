@@ -12,7 +12,7 @@ use crate::associate::user_information::{
     UserInfoItem, UserInformationSubItem, deserialize_user_info_item, serialize_user_info_item,
 };
 use crate::associate::{
-    AssociationItemType, ITEM_LENGTH_LENGTH, next_byte_item_type,
+    AssociateItemType, ITEM_LENGTH_LENGTH, next_byte_item_type,
     presentation_context::{PresentationContextItem, PresentationContextItemBuilder},
 };
 use crate::pdu::{PDU_LENGTH_LENGTH, PDU_TYPE_LENGTH, PduType, read_padding, vec8_add_padding};
@@ -33,15 +33,15 @@ const SUB_ITEM_NO_VARIABLE_FIELDS_LENGTH: u16 = 4;
 /// In DICOM, primitives are interactions between the DICOM server (service provider) and the client (service user).
 ///
 /// See [DICOM standard part 8 subsection 9](https://dicom.nema.org/medical/dicom/current/output/html/part08.html#sect_9).
-enum AssociationEvent {
-    PrimitiveRequestAssociation,
+enum AssociateEvent {
+    PrimitiveRequestAssociate,
     PrimitiveResponseAccept,
     PrimitiveResponseReject,
     PrimitiveConfirmTransport,
     PrimitiveIndicationTransport,
-    AssociationRequest,
-    AssociationAccept,
-    AssociationReject,
+    AssociateRequest,
+    AssociateAccept,
+    AssociateReject,
 }
 
 #[derive(Debug)]
@@ -52,7 +52,7 @@ pub enum Error {
 impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Error::InvalidValue => write!(f, "Invalid AssociationItemType value"),
+            Error::InvalidValue => write!(f, "Invalid AssociateItemType value"),
         }
     }
 }
@@ -95,12 +95,12 @@ impl AssociateRqAcPdu {
 
             presentation_context_items.push(
                 PresentationContextItemBuilder::new()
-                    .item_type(AssociationItemType::PresentationContextAc)
+                    .item_type(AssociateItemType::PresentationContextAc)
                     .context_id(context.context_id)
                     .result(context.result)
                     .add_transfer_syntax(
                         SyntaxItemBuilder::new()
-                            .item_type(AssociationItemType::TransferSyntax)
+                            .item_type(AssociateItemType::TransferSyntax)
                             .syntax(context.transfer_syntax[0].clone())
                             .build()?,
                     )
@@ -146,11 +146,11 @@ impl AssociateRqAcPdu {
 
         for context in indication.presentation_context() {
             let mut builder = PresentationContextItemBuilder::new()
-                .item_type(AssociationItemType::PresentationContextRq)
+                .item_type(AssociateItemType::PresentationContextRq)
                 .context_id(context.context_id)
                 .abstract_syntax_item(
                     SyntaxItemBuilder::new()
-                        .item_type(AssociationItemType::AbstractSyntax)
+                        .item_type(AssociateItemType::AbstractSyntax)
                         .syntax(context.abstract_syntax.clone())
                         .build()?,
                 );
@@ -158,7 +158,7 @@ impl AssociateRqAcPdu {
             for transfer in &context.transfer_syntax {
                 builder = builder.add_transfer_syntax(
                     SyntaxItemBuilder::new()
-                        .item_type(AssociationItemType::TransferSyntax)
+                        .item_type(AssociateItemType::TransferSyntax)
                         .syntax(transfer)
                         .build()?,
                 );
@@ -219,7 +219,7 @@ impl AssociateRqAcPdu {
 }
 
 /// TODO: Look up byteorder and use writer
-pub fn serialize_association_pdu(request: &AssociateRqAcPdu) -> Result<Vec<u8>> {
+pub fn serialize_Associate_pdu(request: &AssociateRqAcPdu) -> Result<Vec<u8>> {
     let mut pdu: Vec<u8> = Vec::new();
 
     pdu.push(request.pdu_type.into());
@@ -261,7 +261,7 @@ pub fn serialize_association_pdu(request: &AssociateRqAcPdu) -> Result<Vec<u8>> 
 }
 
 /// Deserializes a A-ASSOCIATE-RQ or A-ASSOCIATE-AC PDU. Takes a reader of u8
-pub fn deserialize_association_pdu<T: Read>(reader: &mut T) -> Result<AssociateRqAcPdu> {
+pub fn deserialize_Associate_pdu<T: Read>(reader: &mut T) -> Result<AssociateRqAcPdu> {
     let mut reader = BufReader::new(reader);
 
     let mut pdu_type = [0u8; PDU_TYPE_LENGTH];
@@ -301,17 +301,17 @@ pub fn deserialize_association_pdu<T: Read>(reader: &mut T) -> Result<AssociateR
         )?;
 
         match next_type {
-            AssociationItemType::ApplicationContext => {
+            AssociateItemType::ApplicationContext => {
                 application_context_item = Some(deserialize_application_context_item(&mut reader)?);
             }
 
-            AssociationItemType::PresentationContextAc
-            | AssociationItemType::PresentationContextRq => {
+            AssociateItemType::PresentationContextAc
+            | AssociateItemType::PresentationContextRq => {
                 presentation_context_items
                     .push(deserialize_presentation_context_item(&mut reader)?);
             }
 
-            AssociationItemType::UserInformation => {
+            AssociateItemType::UserInformation => {
                 user_info_item = Some(deserialize_user_info_item(&mut reader)?);
             }
 
@@ -336,7 +336,7 @@ pub fn deserialize_association_pdu<T: Read>(reader: &mut T) -> Result<AssociateR
 // TODO: item_type struct
 #[derive(Debug, PartialEq)]
 pub struct ApplicationContextItem {
-    pub item_type: AssociationItemType,
+    pub item_type: AssociateItemType,
     pub length: u16,
     context_name: String,
 }
@@ -346,7 +346,7 @@ impl ApplicationContextItem {
         let context_name = context_name.into();
 
         Self {
-            item_type: AssociationItemType::ApplicationContext,
+            item_type: AssociateItemType::ApplicationContext,
             length: context_name.len() as u16,
             context_name,
         }

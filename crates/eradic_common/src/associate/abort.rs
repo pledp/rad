@@ -15,7 +15,7 @@ pub enum AbortParseError {
 
 #[derive(Debug, PartialEq, Clone, Copy)]
 #[repr(u8)]
-enum AbortSource {
+pub enum AbortSource {
     ServiceUser = 0,
     Reserved = 1,
     ServiceProvider = 2,
@@ -42,7 +42,7 @@ impl TryFrom<u8> for AbortSource {
 
 #[derive(Debug, PartialEq, Clone, Copy)]
 #[repr(u8)]
-enum AbortReason {
+pub enum AbortReason {
     NoReason = 0,
     UnrecognizedPdu = 1,
     UnexpectedPdu = 2,
@@ -79,8 +79,8 @@ impl TryFrom<u8> for AbortReason {
 pub struct AssociateAbortPdu {
     pdu_type: PduType,
     length: u32,
-    source: AbortSource,
-    reason: AbortReason,
+    pub source: AbortSource,
+    pub reason: AbortReason,
 }
 
 impl AssociateAbortPdu {

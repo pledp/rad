@@ -5,7 +5,7 @@ use crate::Result;
 use crate::associate::AssociateRqAcPdu;
 use crate::associate::abort::AssociateAbortPdu;
 
-/// The length of the PDU-type field in the PDU. The Item Type field is the same in A-ASSOCIATION PDU's.
+/// The length of the PDU-type field in the PDU. The Item Type field is the same in A-Associate PDU's.
 pub(crate) const PDU_TYPE_LENGTH: usize = 1;
 
 /// The length of the PDU-length field in the PDU.
@@ -16,8 +16,8 @@ pub const PDU_HEADER_LENGTH: usize = 6;
 const APPLICATION_CONTEXT_NAME: &'static str = "1.2.840.10008.3.1.1.1";
 
 pub enum DeserializedPdu {
-    AssociationRequest(AssociateRqAcPdu),
-    AssociationAccept(AssociateRqAcPdu),
+    AssociateRequest(AssociateRqAcPdu),
+    AssociateAccept(AssociateRqAcPdu),
     Abort(AssociateAbortPdu),
 }
 

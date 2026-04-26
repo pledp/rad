@@ -1,8 +1,7 @@
 use crate::{
     associate::{AssociateRqAcPdu, abort::AssociateAbortPdu},
     service::{
-        AcceptedAssociateRequestResponse, AssociateRequestIndication,
-        RejectedAssociateRequestResponse,
+        AbortIndication, AcceptedAssociateRequestResponse, AssociateRequestIndication, RejectedAssociateRequestResponse
     },
 };
 
@@ -22,9 +21,9 @@ pub enum Event {
 }
 
 pub enum Command {
-    AssociationIndication(AssociateRequestIndication),
-    AbortIndication,
-    AssociationResponse(RejectedAssociateRequestResponse),
+    AssociateIndication(AssociateRequestIndication),
+    AbortIndication(AbortIndication),
+    AssociateResponse(RejectedAssociateRequestResponse),
     AssociateAcceptPdu(AcceptedAssociateRequestResponse),
     AssociateRequestPdu,
     OpenConnection,

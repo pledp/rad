@@ -23,16 +23,16 @@ const CONTEXT_ID_LENGTH: usize = 1;
 const RESULT_LENGTH: usize = 1;
 
 #[derive(Debug, PartialEq)]
-pub enum RejectedAssociationResult {
+pub enum RejectedAssociateResult {
     RejectedPermanent,
     RejectedTransient,
 }
 
 /// Peek into the next byte and output item type.
-fn next_byte_item_type<T>(item_type: T) -> Result<AssociationItemType>
+fn next_byte_item_type<T>(item_type: T) -> Result<AssociateItemType>
 where
-    T: TryInto<AssociationItemType>,
-    <T as TryInto<AssociationItemType>>::Error: std::error::Error + Send + Sync + 'static,
+    T: TryInto<AssociateItemType>,
+    <T as TryInto<AssociateItemType>>::Error: std::error::Error + Send + Sync + 'static,
 {
     item_type
         .try_into()
@@ -41,7 +41,7 @@ where
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]
-pub enum AssociationItemType {
+pub enum AssociateItemType {
     ApplicationContext,
     PresentationContextRq,
     PresentationContextAc,
@@ -50,31 +50,31 @@ pub enum AssociationItemType {
     TransferSyntax,
 }
 
-impl TryFrom<u8> for AssociationItemType {
+impl TryFrom<u8> for AssociateItemType {
     type Error = PduDeserializationError;
 
     fn try_from(value: u8) -> std::result::Result<Self, Self::Error> {
         match value {
-            0x10 => Ok(AssociationItemType::ApplicationContext),
-            0x20 => Ok(AssociationItemType::PresentationContextRq),
-            0x21 => Ok(AssociationItemType::PresentationContextAc),
-            0x30 => Ok(AssociationItemType::AbstractSyntax),
-            0x40 => Ok(AssociationItemType::TransferSyntax),
-            0x50 => Ok(AssociationItemType::UserInformation),
+            0x10 => Ok(AssociateItemType::ApplicationContext),
+            0x20 => Ok(AssociateItemType::PresentationContextRq),
+            0x21 => Ok(AssociateItemType::PresentationContextAc),
+            0x30 => Ok(AssociateItemType::AbstractSyntax),
+            0x40 => Ok(AssociateItemType::TransferSyntax),
+            0x50 => Ok(AssociateItemType::UserInformation),
             _ => Err(PduDeserializationError::InvalidItemType),
         }
     }
 }
 
-impl From<AssociationItemType> for u8 {
-    fn from(value: AssociationItemType) -> Self {
+impl From<AssociateItemType> for u8 {
+    fn from(value: AssociateItemType) -> Self {
         match value {
-            AssociationItemType::ApplicationContext => 0x10,
-            AssociationItemType::PresentationContextRq => 0x20,
-            AssociationItemType::PresentationContextAc => 0x21,
-            AssociationItemType::AbstractSyntax => 0x30,
-            AssociationItemType::TransferSyntax => 0x40,
-            AssociationItemType::UserInformation => 0x50,
+            AssociateItemType::ApplicationContext => 0x10,
+            AssociateItemType::PresentationContextRq => 0x20,
+            AssociateItemType::PresentationContextAc => 0x21,
+            AssociateItemType::AbstractSyntax => 0x30,
+            AssociateItemType::TransferSyntax => 0x40,
+            AssociateItemType::UserInformation => 0x50,
         }
     }
 }
@@ -99,8 +99,8 @@ where
 {
     Ok(match pdu_type {
         PduType::AssociateRequest => {
-            DeserializedPdu::AssociationRequest(
-                deserialize_association_pdu(reader)?
+            DeserializedPdu::AssociateRequest(
+                deserialize_Associate_pdu(reader)?
             )
         },
         PduType::Abort => {
@@ -114,7 +114,7 @@ where
 
 pub fn event_from_deserialized_pdu(pdu: DeserializedPdu) -> Event {
     match pdu {
-        DeserializedPdu::AssociationRequest(inner) => Event::AssociateRequestPdu(inner),
+        DeserializedPdu::AssociateRequest(inner) => Event::AssociateRequestPdu(inner),
         DeserializedPdu::Abort(inner) => Event::AssociateAbortPdu(inner),
         _ => todo!()
     }

@@ -2,7 +2,8 @@ use std::net::IpAddr;
 
 use thiserror::Error;
 
-use crate::associate::RejectedAssociationResult;
+use crate::associate::RejectedAssociateResult;
+use crate::associate::abort::{AbortReason, AbortSource, AssociateAbortPdu};
 use crate::associate::presentation_context::PresentationContextResult;
 use crate::associate::rj::ServiceUserReason;
 use crate::associate::{
@@ -11,7 +12,7 @@ use crate::associate::{
 
 /// DICOM ISO/TR 8509 request and indication primitive. Request and indication contain the same fields.
 ///
-/// Indicates a request to establish an association or a request PDU via TCP.
+/// Indicates a request to establish an Associate or a request PDU via TCP.
 #[derive(Clone, Debug, PartialEq)]
 pub struct AssociateRequestIndication {
     pub context_name: String,
@@ -255,12 +256,27 @@ impl AcceptedAssociateRequestResponse {
 #[derive(Debug, PartialEq)]
 pub struct RejectedAssociateRequestResponse {
     pub diagnostic: Option<ServiceUserReason>,
-    pub result: RejectedAssociationResult,
+    pub result: RejectedAssociateResult,
 }
 
 impl RejectedAssociateRequestResponse {
-    pub fn new(diagnostic: Option<ServiceUserReason>, result: RejectedAssociationResult) -> Self {
+    pub fn new(diagnostic: Option<ServiceUserReason>, result: RejectedAssociateResult) -> Self {
         Self { diagnostic, result }
+    }
+}
+
+#[derive(Debug, PartialEq)]
+pub struct AbortIndication {
+    source: AbortSource,
+    reason: AbortReason
+}
+
+impl AbortIndication {
+    pub fn from_pdu(pdu: AssociateAbortPdu) -> Self {
+        Self {
+            source: pdu.source,
+            reason: pdu.reason
+        }
     }
 }
 

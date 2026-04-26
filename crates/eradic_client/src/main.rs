@@ -7,7 +7,7 @@ use tokio::{
 };
 
 use eradic_common::associate::{
-    AssociateRqAcPdu, MaximumLength, UserInformation, serialize_association_pdu,
+    AssociateRqAcPdu, MaximumLength, UserInformation, serialize_Associate_pdu,
 };
 use eradic_common::event::Event;
 use eradic_common::open_file;
@@ -62,7 +62,7 @@ async fn send_rq(tcp: &mut TcpStream, pdu: AssociateRqAcPdu) -> Result<()> {
     let mut writer = BufWriter::new(tcp);
 
     writer
-        .write_all(serialize_association_pdu(&pdu)?.as_slice())
+        .write_all(serialize_Associate_pdu(&pdu)?.as_slice())
         .await?;
     writer.flush().await?;
 

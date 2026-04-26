@@ -1,7 +1,7 @@
 use std::io::{BufRead, BufReader, Read};
 
 use crate::Result;
-use crate::associate::AssociationItemType;
+use crate::associate::AssociateItemType;
 use crate::associate::ITEM_LENGTH_LENGTH;
 use crate::pdu::{PDU_TYPE_LENGTH, read_padding, vec8_add_padding};
 
@@ -17,7 +17,7 @@ pub struct MaximumLength {
 
 #[derive(Debug, PartialEq)]
 pub struct UserInfoItem {
-    pub item_type: AssociationItemType,
+    pub item_type: AssociateItemType,
     pub length: u16,
     pub sub_items: Vec<UserInformationSubItem>,
 }
@@ -29,7 +29,7 @@ impl UserInfoItem {
         length += sub_items.iter().map(|item| item.item_length()).sum::<u32>();
 
         Self {
-            item_type: AssociationItemType::UserInformation,
+            item_type: AssociateItemType::UserInformation,
             length: length as u16,
             sub_items,
         }

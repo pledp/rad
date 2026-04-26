@@ -23,7 +23,7 @@ use tracing::{Instrument, Level, info, span};
 use tracing_subscriber::FmtSubscriber;
 
 use eradic_common::associate::{
-    AssociateRqAcPdu, deserialize_association_pdu, deserialized_pdu_from_reader, event_from_deserialized_pdu, serialize_association_pdu
+    AssociateRqAcPdu, deserialize_Associate_pdu, deserialized_pdu_from_reader, event_from_deserialized_pdu, serialize_Associate_pdu
 };
 use eradic_common::connection::{UpperLayerAcceptorConnection, handle_server_event};
 use eradic_common::event::{Command, Event};
@@ -112,8 +112,8 @@ async fn handle_client(tcp: TcpStream, socket_addr: SocketAddr) -> Result<()> {
                 info!("User task: Command received");
 
                 match command {
-                    Command::AssociationIndication(indication) => {
-                        info!("User task: Received Command::AssociationIndication");
+                    Command::AssociateIndication(indication) => {
+                        info!("User task: Received Command::AssociateIndication");
 
                         info!("User task: Creating SCU connection");
                         conn = Some(
@@ -259,12 +259,12 @@ where
     info!("Command received");
     match command {
         Command::AssociateAcceptPdu(resp) => {
-            handle_association_response(AssociateRequestResponse::Accepted(resp), writer).await;
+            handle_Associate_response(AssociateRequestResponse::Accepted(resp), writer).await;
         }
 
-        Command::AssociationIndication(indication) => {
+        Command::AssociateIndication(indication) => {
             user_connection
-                .send(Command::AssociationIndication(indication))
+                .send(Command::AssociateIndication(indication))
                 .await;
         }
 
@@ -290,7 +290,7 @@ where
     Ok((buffer, header.pdu_type))
 }
 
-async fn handle_association_response<W>(
+async fn handle_Associate_response<W>(
     response: AssociateRequestResponse,
     tcp: &mut W,
 ) -> Result<()>
@@ -299,15 +299,15 @@ where
 {
     match response {
         AssociateRequestResponse::Accepted(inner) => {
-            info!("Sending A-ASSOCIATION-AC PDU");
+            info!("Sending A-Associate-AC PDU");
 
             let pdu = AssociateRqAcPdu::from_response(&inner)?;
-            tcp.write_all(serialize_association_pdu(&pdu)?.as_slice())
+            tcp.write_all(serialize_Associate_pdu(&pdu)?.as_slice())
                 .await?;
             Ok(())
         }
         AssociateRequestResponse::Rejected(inner) => {
-            info!("Sending A-ASSOCIATION-RJ PDU: {:?}", inner);
+            info!("Sending A-Associate-RJ PDU: {:?}", inner);
             todo!();
         }
     }
