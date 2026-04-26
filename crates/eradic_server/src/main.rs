@@ -8,8 +8,10 @@ use std::sync::{
     Arc,
     atomic::{AtomicI64, Ordering},
 };
+use std::thread::sleep;
 
 use tokio::io::AsyncWrite;
+use tokio::time::{self, Sleep};
 use tokio::{
     io::{AsyncRead, AsyncReadExt, AsyncWriteExt},
     net::{TcpListener, TcpStream},
@@ -21,7 +23,7 @@ use tracing::{Instrument, Level, info, span};
 use tracing_subscriber::FmtSubscriber;
 
 use eradic_common::associate::{
-    AssociateRqAcPdu, deserialize_association_pdu, serialize_association_pdu,
+    AssociateRqAcPdu, deserialize_association_pdu, deserialized_pdu_from_reader, event_from_deserialized_pdu, serialize_association_pdu
 };
 use eradic_common::connection::{UpperLayerAcceptorConnection, handle_server_event};
 use eradic_common::event::{Command, Event};
@@ -124,6 +126,8 @@ async fn handle_client(tcp: TcpStream, socket_addr: SocketAddr) -> Result<()> {
                             todo!()
                         };
 
+                        sleep(time::Duration::from_secs(500));
+
                         event_tx_user.send(event).await;
                     }
                     _ => todo!(),
@@ -157,20 +161,11 @@ async fn handle_client(tcp: TcpStream, socket_addr: SocketAddr) -> Result<()> {
             loop {
                 match read_full_pdu(&mut reader).await {
                     Ok((buf, pdu_type)) => {
-                        let deserialized_pdu = match pdu_type {
-                            PduType::AssociateRequest => Some(DeserializedPdu::AssociationRequest(
-                                deserialize_association_pdu(&mut Cursor::new(buf)).unwrap(),
-                            )),
-                            _ => todo!(),
-                        };
-
-                        match deserialized_pdu {
-                            Some(DeserializedPdu::AssociationRequest(pdu)) => {
-                                info!("Sending event");
-                                event_tx.send(Event::AssociateRequestPdu(pdu)).await;
-                            }
-                            _ => return Err("test".into()),
-                        };
+                        event_tx.send(
+                            event_from_deserialized_pdu(
+                                deserialized_pdu_from_reader(&mut Cursor::new(buf), pdu_type)?
+                            )
+                        ).await;
                     }
                     Err(_e) => return Err("test".into()),
                 }

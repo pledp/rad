@@ -3,6 +3,7 @@ use std::io::Read;
 
 use crate::Result;
 use crate::associate::AssociateRqAcPdu;
+use crate::associate::abort::AssociateAbortPdu;
 
 /// The length of the PDU-type field in the PDU. The Item Type field is the same in A-ASSOCIATION PDU's.
 pub(crate) const PDU_TYPE_LENGTH: usize = 1;
@@ -17,6 +18,7 @@ const APPLICATION_CONTEXT_NAME: &'static str = "1.2.840.10008.3.1.1.1";
 pub enum DeserializedPdu {
     AssociationRequest(AssociateRqAcPdu),
     AssociationAccept(AssociateRqAcPdu),
+    Abort(AssociateAbortPdu),
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]

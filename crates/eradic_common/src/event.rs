@@ -1,5 +1,5 @@
 use crate::{
-    associate::AssociateRqAcPdu,
+    associate::{AssociateRqAcPdu, abort::AssociateAbortPdu},
     service::{
         AcceptedAssociateRequestResponse, AssociateRequestIndication,
         RejectedAssociateRequestResponse,
@@ -15,6 +15,7 @@ pub enum Event {
     DataPdu,
     AssociateRejectPdu,
     AssociateAcceptPdu,
+    AssociateAbortPdu(AssociateAbortPdu),
     AssociateRequestPrimitive(AssociateRequestIndication),
     AssociateResponsePrimitiveReject(RejectedAssociateRequestResponse),
     AssociateResponsePrimitiveAccept(AcceptedAssociateRequestResponse),
@@ -22,6 +23,7 @@ pub enum Event {
 
 pub enum Command {
     AssociationIndication(AssociateRequestIndication),
+    AbortIndication,
     AssociationResponse(RejectedAssociateRequestResponse),
     AssociateAcceptPdu(AcceptedAssociateRequestResponse),
     AssociateRequestPdu,

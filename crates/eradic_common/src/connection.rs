@@ -10,7 +10,7 @@ use crate::Result;
 #[derive(Clone, Copy)]
 pub enum UpperLayerConnectionState {
     /// Sta1
-    NoAssociation,
+    Idle,
     /// Sta2
     WaitingForRequestPdu,
     // Sta 4
@@ -42,7 +42,7 @@ impl UpperLayerAcceptorConnection {
 
     pub fn new_no_assoc() -> Self {
         Self {
-            state: UpperLayerConnectionState::NoAssociation,
+            state: UpperLayerConnectionState::Idle,
             called_address: None,
             calling_address: None,
         }
@@ -133,6 +133,12 @@ pub fn handle_server_event(
             Some(Command::AssociateAcceptPdu(prim))
         }
 
+        Event::AssociateAbortPdu(pdu) => {
+            new_state.state = UpperLayerConnectionState::Idle;
+
+            Some(Command::AbortIndication)
+        }
+
         _ => {
             todo!()
         }
@@ -157,7 +163,7 @@ impl UpperLayerRequestorConnection {
 
     pub fn new_no_assoc() -> Self {
         Self {
-            state: UpperLayerConnectionState::NoAssociation,
+            state: UpperLayerConnectionState::Idle,
         }
     }
 

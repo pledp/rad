@@ -1,15 +1,17 @@
-mod abort;
+pub mod abort;
 pub mod presentation_context;
 pub mod rj;
 mod rq_ac;
 mod user_information;
+
+use std::io::Read;
 
 use thiserror::Error;
 
 pub use rq_ac::*;
 pub use user_information::*;
 
-use crate::Result;
+use crate::{DeserializedPdu, Result, associate::abort::deserialize_abort_pdu, event::Event, pdu::PduType};
 
 /// Length of the Item length field.
 const ITEM_LENGTH_LENGTH: usize = 2;
@@ -87,4 +89,33 @@ pub enum PduDeserializationError {
     InvalidLength(#[from] std::io::Error),
     #[error(transparent)]
     InvalidEncoding(#[from] std::string::FromUtf8Error),
+    #[error(transparent)]
+    InvalidAbortParam(#[from] abort::AbortParseError)
+}
+
+pub fn deserialized_pdu_from_reader<R>(reader: &mut R, pdu_type: PduType) -> Result<DeserializedPdu>
+where
+    R: Read
+{
+    Ok(match pdu_type {
+        PduType::AssociateRequest => {
+            DeserializedPdu::AssociationRequest(
+                deserialize_association_pdu(reader)?
+            )
+        },
+        PduType::Abort => {
+            DeserializedPdu::Abort(
+                deserialize_abort_pdu(reader)?
+            )
+        }
+        _ => todo!(),
+    })
+}
+
+pub fn event_from_deserialized_pdu(pdu: DeserializedPdu) -> Event {
+    match pdu {
+        DeserializedPdu::AssociationRequest(inner) => Event::AssociateRequestPdu(inner),
+        DeserializedPdu::Abort(inner) => Event::AssociateAbortPdu(inner),
+        _ => todo!()
+    }
 }
