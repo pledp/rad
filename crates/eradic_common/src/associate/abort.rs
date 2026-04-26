@@ -84,13 +84,12 @@ pub struct AssociateAbortPdu {
 }
 
 impl AssociateAbortPdu {
-    fn new(
-        pdu_type: PduType,
+    pub fn new(
         source: AbortSource,
         reason: AbortReason,
     ) -> Self {
         Self {
-            pdu_type,
+            pdu_type: PduType::Abort,
             length: 4,
             source,
             reason
@@ -98,7 +97,7 @@ impl AssociateAbortPdu {
     }
 }
 
-pub(crate) fn serialize_abort_pdu(item: &AssociateAbortPdu) -> Vec<u8> {
+pub fn serialize_abort_pdu(item: &AssociateAbortPdu) -> Vec<u8> {
     let mut pdu: Vec<u8> = Vec::new();
 
     pdu.push(item.pdu_type.into());
@@ -112,7 +111,12 @@ pub(crate) fn serialize_abort_pdu(item: &AssociateAbortPdu) -> Vec<u8> {
     pdu
 }
 
-pub(crate) fn deserialize_abort_pdu<T: Read>(
+/// Deserializes bytes from a [Read] into a [AssociateAbortPdu].
+///
+/// # Errors
+/// - Returns [PduDeserializationError::InvalidLength] if the reader does not contain enough bytes (4 + Item Length).
+/// - Returns [PduDeserializationError::InvalidItemType] error if item type is not [PduType::Abort].
+pub fn deserialize_abort_pdu<T: Read>(
     reader: &mut T,
 ) -> Result<AssociateAbortPdu, PduDeserializationError> {
     const SOURCE_LENGTH: usize = 1;
@@ -120,6 +124,14 @@ pub(crate) fn deserialize_abort_pdu<T: Read>(
 
     let mut item_type = [0u8; PDU_TYPE_LENGTH];
     reader.read_exact(&mut item_type)?;
+
+    PduType::try_from(item_type[0])
+        .map_err(|_| PduDeserializationError::InvalidItemType)
+        .and_then(|t| if t == PduType::Abort {
+            Ok(())
+        } else {
+            Err(PduDeserializationError::InvalidItemType)
+        })?;
 
     read_padding(reader, 1);
 
@@ -137,10 +149,65 @@ pub(crate) fn deserialize_abort_pdu<T: Read>(
     reader.read_exact(&mut reason)?;
 
     Ok(AssociateAbortPdu::new(
-        item_type[0]
-            .try_into()
-            .map_err(|_| PduDeserializationError::InvalidItemType)?,
         source[0].try_into()?,
         reason[0].try_into()?
     ))
+}
+
+mod tests {
+    use std::io::Cursor;
+
+    use crate::{associate::{PduDeserializationError, abort::{AbortParseError, AbortReason, AbortSource, deserialize_abort_pdu}}, pdu::PduType};
+
+    #[test]
+    fn test_deserialize_abort_pdu_ok() {
+        let mut reader = Cursor::new(vec![0x07, 0x00, 0x00, 0x00, 0x00, 0x04, 0x00, 0x00, 0x02, 0x00]);
+
+        let result = deserialize_abort_pdu(&mut reader);
+
+        assert!(result.is_ok());
+        let pdu = result.unwrap();
+
+        assert_eq!(pdu.pdu_type, PduType::Abort);
+        assert_eq!(pdu.length, 4);
+        assert_eq!(pdu.source, AbortSource::ServiceProvider);
+        assert_eq!(pdu.reason, AbortReason::NoReason);
+    }
+
+    #[test]
+    fn test_deserialize_abort_pdu_invalid_type() {
+        let mut reader = Cursor::new(vec![0xFF, 0x00, 0x00, 0x00, 0x00, 0x04, 0x00, 0x00, 0x02, 0x00]);
+
+        let result = deserialize_abort_pdu(&mut reader);
+
+        assert!(matches!(result, Err(PduDeserializationError::InvalidItemType)));
+    }
+
+    #[test]
+    fn test_deserialize_invalid_length() {
+        let mut reader = Cursor::new(vec![0x07, 0x00, 0x00, 0x00, 0x00, 0x04, 0x00, 0x00, 0x02]);
+
+        let result = deserialize_abort_pdu(&mut reader);
+
+        assert!(matches!(result, Err(PduDeserializationError::InvalidLength(_))));
+    }
+
+    #[test]
+    fn test_deserialize_abort_pdu_invalid_source() {
+        let mut reader = Cursor::new(vec![0x07, 0x00, 0x00, 0x00, 0x00, 0x04, 0x00, 0x00, 0xFF, 0x00]);
+        let result = deserialize_abort_pdu(&mut reader);
+        assert!(matches!(result, Err(PduDeserializationError::InvalidAbortPdu(
+            AbortParseError::InvalidAbortSource(_)
+        ))));
+    }
+
+    #[test]
+    fn test_deserialize_abort_pdu_invalid_reason() {
+        let mut reader = Cursor::new(vec![0x07, 0x00, 0x00, 0x00, 0x00, 0x04, 0x00, 0x00, 0x02, 0xFF]);
+        let result = deserialize_abort_pdu(&mut reader);
+        assert!(matches!(result, Err(PduDeserializationError::InvalidAbortPdu(
+            AbortParseError::InvalidAbortReason(_)
+        ))));
+    }
+
 }

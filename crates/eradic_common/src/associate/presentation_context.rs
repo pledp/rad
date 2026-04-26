@@ -287,7 +287,7 @@ impl SyntaxItemBuilder {
 
 pub(crate) fn serialize_presentation_context_item(
     item: &PresentationContextItem,
-) -> crate::Result<Vec<u8>> {
+) -> Vec<u8> {
     let mut pdu: Vec<u8> = Vec::new();
 
     pdu.push(item.item_type.into());
@@ -316,7 +316,7 @@ pub(crate) fn serialize_presentation_context_item(
         pdu.extend(serialize_syntax_item(item));
     }
 
-    Ok(pdu)
+    pdu
 }
 
 /// Deserialize [PresentationContextItem] from a reader.

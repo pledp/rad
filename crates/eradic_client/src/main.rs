@@ -1,13 +1,16 @@
 use std::net::{IpAddr, Ipv4Addr};
 use std::path::Path;
+use std::thread::sleep;
+use std::time::Duration;
 
+use eradic_common::associate::abort::{AssociateAbortPdu, serialize_abort_pdu};
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt, BufWriter},
     net::TcpStream,
 };
 
 use eradic_common::associate::{
-    AssociateRqAcPdu, MaximumLength, UserInformation, serialize_Associate_pdu,
+    AssociateRqAcPdu, MaximumLength, UserInformation, serialize_associate_pdu,
 };
 use eradic_common::event::Event;
 use eradic_common::open_file;
@@ -60,9 +63,20 @@ async fn main() -> Result<()> {
 
 async fn send_rq(tcp: &mut TcpStream, pdu: AssociateRqAcPdu) -> Result<()> {
     let mut writer = BufWriter::new(tcp);
+    let abort = AssociateAbortPdu::new(
+        eradic_common::associate::abort::AbortSource::ServiceProvider,
+        eradic_common::associate::abort::AbortReason::NoReason,
+    );
 
     writer
-        .write_all(serialize_Associate_pdu(&pdu)?.as_slice())
+        .write_all(serialize_associate_pdu(&pdu).as_slice())
+        .await?;
+    writer.flush().await?;
+
+    sleep(Duration::from_secs(2));
+
+    writer
+        .write_all(serialize_abort_pdu(&abort).as_slice())
         .await?;
     writer.flush().await?;
 

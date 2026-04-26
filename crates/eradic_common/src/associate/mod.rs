@@ -90,7 +90,7 @@ pub enum PduDeserializationError {
     #[error(transparent)]
     InvalidEncoding(#[from] std::string::FromUtf8Error),
     #[error(transparent)]
-    InvalidAbortParam(#[from] abort::AbortParseError)
+    InvalidAbortPdu(#[from] abort::AbortParseError)
 }
 
 pub fn deserialized_pdu_from_reader<R>(reader: &mut R, pdu_type: PduType) -> Result<DeserializedPdu>
@@ -100,7 +100,7 @@ where
     Ok(match pdu_type {
         PduType::AssociateRequest => {
             DeserializedPdu::AssociateRequest(
-                deserialize_Associate_pdu(reader)?
+                deserialize_associate_pdu(reader)?
             )
         },
         PduType::Abort => {

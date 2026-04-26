@@ -71,7 +71,7 @@ impl UserInfoItemBuilder {
     }
 }
 
-pub fn serialize_user_info_item(item: &UserInfoItem) -> Result<Vec<u8>> {
+pub fn serialize_user_info_item(item: &UserInfoItem) -> Vec<u8> {
     let mut pdu: Vec<u8> = Vec::new();
 
     pdu.push(item.item_type.into());
@@ -80,10 +80,10 @@ pub fn serialize_user_info_item(item: &UserInfoItem) -> Result<Vec<u8>> {
     pdu.extend_from_slice(&item.length.to_be_bytes());
 
     for item in item.sub_items.iter() {
-        pdu.extend(serialize_sub_item(item)?);
+        pdu.extend(serialize_sub_item(item));
     }
 
-    Ok(pdu)
+    pdu
 }
 
 pub fn deserialize_user_info_item<T: Read>(reader: &mut T) -> Result<UserInfoItem> {
@@ -149,7 +149,7 @@ impl UserInformationSubItem {
     }
 }
 
-pub fn serialize_sub_item(item: &UserInformationSubItem) -> Result<Vec<u8>> {
+pub fn serialize_sub_item(item: &UserInformationSubItem) -> Vec<u8> {
     let mut pdu: Vec<u8> = Vec::new();
 
     pdu.push(item.item_type);
@@ -162,7 +162,7 @@ pub fn serialize_sub_item(item: &UserInformationSubItem) -> Result<Vec<u8>> {
         }
     }
 
-    Ok(pdu)
+    pdu
 }
 
 pub fn deserialize_sub_item<T: Read>(reader: &mut T) -> Result<UserInformationSubItem> {

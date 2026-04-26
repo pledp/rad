@@ -13,7 +13,7 @@ The Eradic DICOM state machine only takes events as input to handle state transi
 let mut conn = UpperLayerConnection::new_server(socket_addr.ip(), tcp.local_addr()?.ip());
 
 // 
-let pdu = deserialize_Associate_pdu(&mut reader)?;
+let pdu = deserialize_associate_pdu(&mut reader)?;
 
 let command = conn.handle_event(Event::AssociateRequestPdu(pdu))
 

@@ -50,11 +50,11 @@ pub enum ServiceUserError {
     ServiceUserNotFound,
 }
 
-pub struct ServiceUsers {
+pub struct UpperLayerServiceUser {
     //application_entities: ApplicationEntityRegistry,
 }
 
-impl ServiceUsers {
+impl UpperLayerServiceUser {
     pub fn new() -> Self {
         Self {}
     }

@@ -219,7 +219,7 @@ impl AssociateRqAcPdu {
 }
 
 /// TODO: Look up byteorder and use writer
-pub fn serialize_Associate_pdu(request: &AssociateRqAcPdu) -> Result<Vec<u8>> {
+pub fn serialize_associate_pdu(request: &AssociateRqAcPdu) -> Vec<u8> {
     let mut pdu: Vec<u8> = Vec::new();
 
     pdu.push(request.pdu_type.into());
@@ -249,19 +249,19 @@ pub fn serialize_Associate_pdu(request: &AssociateRqAcPdu) -> Result<Vec<u8>> {
 
     pdu.extend(serialize_application_context_item(
         &request.application_context_item,
-    )?);
+    ));
 
     for item in request.presentation_context_items.iter() {
-        pdu.extend(serialize_presentation_context_item(item)?);
+        pdu.extend(serialize_presentation_context_item(item));
     }
 
-    pdu.extend(serialize_user_info_item(&request.user_info_item)?);
+    pdu.extend(serialize_user_info_item(&request.user_info_item));
 
-    Ok(pdu)
+    pdu
 }
 
 /// Deserializes a A-ASSOCIATE-RQ or A-ASSOCIATE-AC PDU. Takes a reader of u8
-pub fn deserialize_Associate_pdu<T: Read>(reader: &mut T) -> Result<AssociateRqAcPdu> {
+pub fn deserialize_associate_pdu<T: Read>(reader: &mut T) -> Result<AssociateRqAcPdu> {
     let mut reader = BufReader::new(reader);
 
     let mut pdu_type = [0u8; PDU_TYPE_LENGTH];
@@ -363,7 +363,7 @@ impl ApplicationContextItem {
     }
 }
 
-fn serialize_application_context_item(item: &ApplicationContextItem) -> Result<Vec<u8>> {
+fn serialize_application_context_item(item: &ApplicationContextItem) -> Vec<u8> {
     let mut pdu: Vec<u8> = Vec::new();
 
     pdu.push(item.item_type.into());
@@ -371,7 +371,7 @@ fn serialize_application_context_item(item: &ApplicationContextItem) -> Result<V
     pdu.extend_from_slice(&item.length.to_be_bytes());
     pdu.extend_from_slice(item.context_name.as_bytes());
 
-    Ok(pdu)
+    pdu
 }
 
 fn deserialize_application_context_item<T: Read>(reader: &mut T) -> Result<ApplicationContextItem> {

@@ -20,20 +20,20 @@ use tokio::{
 use tokio_util::sync::CancellationToken;
 
 use tracing::{Instrument, Level, info, span};
-use tracing_subscriber::FmtSubscriber;
+use tracing_subscriber::{FmtSubscriber, fmt};
 
 use eradic_common::associate::{
-    AssociateRqAcPdu, deserialize_Associate_pdu, deserialized_pdu_from_reader, event_from_deserialized_pdu, serialize_Associate_pdu
+    AssociateRqAcPdu, deserialize_associate_pdu, deserialized_pdu_from_reader, event_from_deserialized_pdu, serialize_associate_pdu
 };
 use eradic_common::connection::{UpperLayerAcceptorConnection, handle_server_event};
-use eradic_common::event::{Command, Event};
+use eradic_common::event::{Command, Event, Indication};
 use eradic_common::pdu::{DeserializedPdu, PDU_HEADER_LENGTH, PduType, read_pdu_header};
 
 use eradic_common::service::AssociateRequestResponse;
 
 use eradic_adaptor::UpperLayerServiceUserConnection;
 
-use crate::service_user::ServiceUsers;
+use crate::service_user::UpperLayerServiceUser;
 
 pub type Result<T> = std::result::Result<T, Error>;
 pub type Error = Box<dyn std::error::Error + Send + Sync>;
@@ -46,6 +46,7 @@ async fn main() -> Result<()> {
         .with_max_level(Level::DEBUG)
         .with_file(true)
         .with_line_number(true)
+        .fmt_fields(fmt::format::DefaultFields::new())
         .finish();
 
     tracing::subscriber::set_global_default(subscriber)?;
@@ -81,6 +82,8 @@ async fn handle_client(tcp: TcpStream, socket_addr: SocketAddr) -> Result<()> {
         port = socket_addr.port()
     );
 
+    span.record("Task", &"User task");
+
     let _guard = span.enter();
 
     info!(
@@ -95,29 +98,35 @@ async fn handle_client(tcp: TcpStream, socket_addr: SocketAddr) -> Result<()> {
 
     let (command_tx, command_rx) = mpsc::channel::<Command>(32);
     let (event_tx, event_rx) = mpsc::channel::<Event>(32);
-    let (user_tx, mut user_rx) = mpsc::channel::<Command>(32);
+    let (user_tx, mut user_rx) = mpsc::channel::<Indication>(32);
 
     let cancel = CancellationToken::new();
     let child = cancel.child_token();
-    let child_2 = cancel.child_token();
 
     let event_tx_user = event_tx.clone();
+
+    let user_span = span!(
+        parent: span.clone(),
+        Level::INFO,
+        "UL SCU connection task",
+    );
     let user_task = tokio::spawn(
         async move {
             let mut conn: Option<Box<dyn UpperLayerServiceUserConnection>> = None;
+            info!("Starting user task");
 
             loop {
-                info!("Starting user task");
-                let command = user_rx.recv().await.unwrap();
-                info!("User task: Command received");
+                let indication = user_rx.recv().await.unwrap();
+                info!(
+                    "Received indication: {}",
+                    <&str>::from(&indication)
+                );
 
-                match command {
-                    Command::AssociateIndication(indication) => {
-                        info!("User task: Received Command::AssociateIndication");
-
-                        info!("User task: Creating SCU connection");
+                match indication {
+                    Indication::AssociateIndication(indication) => {
+                        info!("Creating SCU connection");
                         conn = Some(
-                            ServiceUsers::create_scu_connection(&indication.called_ae).unwrap(),
+                            UpperLayerServiceUser::create_scu_connection(&indication.called_ae).unwrap(),
                         );
 
                         let event = if let Some(c) = conn.as_mut() {
@@ -126,33 +135,49 @@ async fn handle_client(tcp: TcpStream, socket_addr: SocketAddr) -> Result<()> {
                             todo!()
                         };
 
-                        sleep(time::Duration::from_secs(500));
-
                         event_tx_user.send(event).await;
+                    },
+                    Indication::AbortIndication(indication) => {
+                        return;
                     }
                     _ => todo!(),
                 }
             }
         }
-        .instrument(tracing::Span::current()),
+        .instrument(user_span)
     );
 
+    let command_span = span!(
+        parent: span.clone(),
+        Level::INFO,
+        "UL SCU command task",
+    );
     let command_task = tokio::spawn(
-        handle_command_task(writer, command_rx, user_tx, child)
-            .instrument(tracing::Span::current()),
+        handle_command_task(writer, command_rx, user_tx, cancel)
+            .instrument(command_span),
     );
 
+    let event_span = span!(
+        parent: span.clone(),
+        Level::INFO,
+        "UL SCU event task",
+    );
     let event_task = tokio::spawn(
         handle_event_task(
             event_rx,
             command_tx.clone(),
             called,
             socket_addr.ip(),
-            child_2,
+            child,
         )
-        .instrument(tracing::Span::current()),
+        .instrument(event_span),
     );
 
+    let read_span = span!(
+        parent: span.clone(),
+        Level::INFO,
+        "UL SCU PDU read task",
+    );
     // TODO: Move to other functions, too nested
     let read_task: tokio::task::JoinHandle<Result<String>> = tokio::spawn(
         async move {
@@ -171,7 +196,7 @@ async fn handle_client(tcp: TcpStream, socket_addr: SocketAddr) -> Result<()> {
                 }
             }
         }
-        .instrument(tracing::Span::current()),
+        .instrument(read_span),
     );
 
     tokio::join!(command_task, event_task, user_task, read_task);
@@ -198,7 +223,7 @@ async fn handle_event_task(
     loop {
         tokio::select! {
             _ = cancel.cancelled() => {
-                info!("cancelled");
+                info!("Cancelled");
                 break;
             }
             _ = async {
@@ -227,7 +252,7 @@ async fn handle_event_task(
 async fn handle_command_task<W>(
     mut writer: W,
     mut rx: mpsc::Receiver<Command>,
-    user_connection: mpsc::Sender<Command>,
+    user_connection: mpsc::Sender<Indication>,
     cancel: CancellationToken,
 ) -> Result<()>
 where
@@ -238,13 +263,13 @@ where
     loop {
         tokio::select! {
             _ = cancel.cancelled() => {
-                info!("cancelled");
+                info!("Cancelled");
                 break;
             }
             _ = async {
                 let command = rx.recv().await.unwrap();
 
-                handle_command(&mut writer, command, user_connection.clone()).await;
+                handle_command(&mut writer, command, user_connection.clone(), cancel.clone()).await;
             } => {}
         }
     }
@@ -252,7 +277,12 @@ where
     Ok(())
 }
 
-async fn handle_command<W>(writer: &mut W, command: Command, user_connection: mpsc::Sender<Command>)
+async fn handle_command<W>(
+    writer: &mut W,
+    command: Command,
+    user_connection: mpsc::Sender<Indication>,
+    cancel: CancellationToken,
+)
 where
     W: AsyncWrite + Unpin,
 {
@@ -264,8 +294,16 @@ where
 
         Command::AssociateIndication(indication) => {
             user_connection
-                .send(Command::AssociateIndication(indication))
+                .send(Indication::AssociateIndication(indication))
                 .await;
+        }
+
+        Command::AbortIndication(indication) => {
+            user_connection
+                .send(Indication::AbortIndication(indication))
+                .await;
+
+            cancel.cancel();
         }
 
         _ => todo!(),
@@ -302,7 +340,7 @@ where
             info!("Sending A-Associate-AC PDU");
 
             let pdu = AssociateRqAcPdu::from_response(&inner)?;
-            tcp.write_all(serialize_Associate_pdu(&pdu)?.as_slice())
+            tcp.write_all(serialize_associate_pdu(&pdu).as_slice())
                 .await?;
             Ok(())
         }
