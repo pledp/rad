@@ -1,28 +1,29 @@
 use std::collections::HashMap;
+use std::sync::Arc;
 
-use thiserror::Error;
+use async_trait::async_trait;
+
+use tokio::sync::{Mutex};
 
 use eradic_common::service::PresentationContextDefinitionResultList;
 use eradic_common::{
     associate::{
-        RejectedAssociateResult, presentation_context::PresentationContextResult,
-        rj::ServiceUserReason,
+        presentation_context::PresentationContextResult,
     },
     event::Event,
     service::{
         AcceptedAssociateRequestResponse, AssociateRequestIndication,
-        RejectedAssociateRequestResponse,
     },
 };
 
-use eradic_adaptor::UpperLayerServiceUserConnection;
+use eradic_adaptor::{ServiceUserError, UpperLayerServiceUser, UpperLayerServiceUserAsync, UpperLayerServiceUserConnection, UpperLayerServiceUserConnectionAsync};
 
-pub type ApplicationEntityRegistry = Vec<String>;
+pub type ApplicationEntityRegistry = HashMap<String, Arc<Mutex<Pacs>>>;
 
 struct Pacs {}
 
-impl UpperLayerServiceUserConnection for Pacs {
-    fn handle_associate_request(&mut self, indication: AssociateRequestIndication) -> Event {
+impl Pacs {
+    pub fn handle_associate_request(&mut self, indication: AssociateRequestIndication) -> Event {
         let presentation_context_result = indication
             .presentation_context
             .into_iter()
@@ -44,27 +45,41 @@ impl UpperLayerServiceUserConnection for Pacs {
     }
 }
 
-#[derive(Debug, Error, PartialEq, Eq)]
-pub enum ServiceUserError {
-    #[error("Service User / Application Entity was not ")]
-    ServiceUserNotFound,
+
+pub struct LocalUpperLayerServiceUserConnection {
+    pacs: Arc<Mutex<Pacs>>
 }
 
-pub struct UpperLayerServiceUser {
-    //application_entities: ApplicationEntityRegistry,
-}
-
-impl UpperLayerServiceUser {
-    pub fn new() -> Self {
-        Self {}
+#[async_trait]
+impl UpperLayerServiceUserConnectionAsync for LocalUpperLayerServiceUserConnection {
+    async fn handle_associate_request(&mut self, indication: AssociateRequestIndication) -> Event {
+        let mut guard = self.pacs.lock().await;
+        (*guard).handle_associate_request(indication)
     }
+}
 
-    pub fn create_scu_connection(
+pub struct LocalUpperLayerServiceUser {
+    application_entities: ApplicationEntityRegistry,
+}
+
+impl LocalUpperLayerServiceUser {
+    pub fn new() -> Self {
+        let mut registry = ApplicationEntityRegistry::new();
+        registry.insert("rad".to_string(), Arc::new(Mutex::new(Pacs {})));
+        Self { application_entities: registry }
+    }
+}
+
+impl UpperLayerServiceUserAsync for LocalUpperLayerServiceUser {
+    fn create_scu_connection(
+        &self,
         ae: &str,
-    ) -> Result<Box<dyn UpperLayerServiceUserConnection>, ServiceUserError> {
-        match ae {
-            "rad" => Ok(Box::new(Pacs {})),
-            _ => Err(ServiceUserError::ServiceUserNotFound),
+    ) -> Result<Box<dyn UpperLayerServiceUserConnectionAsync>, ServiceUserError> {
+        match self.application_entities.get(ae) {
+            Some(pacs) => Ok(Box::new(LocalUpperLayerServiceUserConnection {
+                pacs: Arc::clone(pacs),
+            })),
+            None => Err(ServiceUserError::ServiceUserNotFound),
         }
     }
 }

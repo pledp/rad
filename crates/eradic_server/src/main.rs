@@ -20,6 +20,7 @@ use tokio::{
 use tokio_util::sync::CancellationToken;
 
 use tracing::{Instrument, Level, info, span};
+use tracing_log::log::error;
 use tracing_subscriber::{FmtSubscriber, fmt};
 
 use eradic_common::associate::{
@@ -31,9 +32,9 @@ use eradic_common::pdu::{DeserializedPdu, PDU_HEADER_LENGTH, PduType, read_pdu_h
 
 use eradic_common::service::AssociateRequestResponse;
 
-use eradic_adaptor::UpperLayerServiceUserConnection;
+use eradic_adaptor::{UpperLayerServiceUser, UpperLayerServiceUserAsync, UpperLayerServiceUserConnection, UpperLayerServiceUserConnectionAsync};
 
-use crate::service_user::UpperLayerServiceUser;
+use crate::service_user::LocalUpperLayerServiceUser;
 
 pub type Result<T> = std::result::Result<T, Error>;
 pub type Error = Box<dyn std::error::Error + Send + Sync>;
@@ -53,6 +54,8 @@ async fn main() -> Result<()> {
 
     info!("System initialized");
 
+    let ul_scu = Arc::new(LocalUpperLayerServiceUser::new());
+
     let server = TcpListener::bind("127.0.0.1:104").await?;
     info!("Listening for connections...");
 
@@ -61,11 +64,12 @@ async fn main() -> Result<()> {
     loop {
         let (tcp, socket_addr) = server.accept().await?;
         let client_count_clone = Arc::clone(&client_count);
+        let ul_scu_clone = Arc::clone(&ul_scu);
 
         tokio::spawn(async move {
             client_count_clone.fetch_add(1, Ordering::AcqRel);
 
-            let result = handle_client(tcp, socket_addr).await;
+            let result = handle_client(tcp, socket_addr, ul_scu_clone).await;
 
             client_count_clone.fetch_sub(1, Ordering::AcqRel);
 
@@ -76,7 +80,10 @@ async fn main() -> Result<()> {
     Ok(())
 }
 
-async fn handle_client(tcp: TcpStream, socket_addr: SocketAddr) -> Result<()> {
+async fn handle_client<U>(tcp: TcpStream, socket_addr: SocketAddr, ul_scu: Arc<U>) -> Result<()>
+where
+    U: UpperLayerServiceUserAsync + Sync + Send + 'static
+{
     let span = span!(Level::INFO, "connection",
         ip = %socket_addr.ip(),
         port = socket_addr.port()
@@ -112,8 +119,7 @@ async fn handle_client(tcp: TcpStream, socket_addr: SocketAddr) -> Result<()> {
     );
     let user_task = tokio::spawn(
         async move {
-            let mut conn: Option<Box<dyn UpperLayerServiceUserConnection>> = None;
-            info!("Starting user task");
+            let mut conn: Option<Box<dyn UpperLayerServiceUserConnectionAsync>> = None;
 
             loop {
                 let indication = user_rx.recv().await.unwrap();
@@ -126,11 +132,11 @@ async fn handle_client(tcp: TcpStream, socket_addr: SocketAddr) -> Result<()> {
                     Indication::AssociateIndication(indication) => {
                         info!("Creating SCU connection");
                         conn = Some(
-                            UpperLayerServiceUser::create_scu_connection(&indication.called_ae).unwrap(),
+                            ul_scu.create_scu_connection(&indication.called_ae).unwrap(),
                         );
 
                         let event = if let Some(c) = conn.as_mut() {
-                            c.handle_associate_request(indication)
+                            c.handle_associate_request(indication).await
                         } else {
                             todo!()
                         };
@@ -181,8 +187,6 @@ async fn handle_client(tcp: TcpStream, socket_addr: SocketAddr) -> Result<()> {
     // TODO: Move to other functions, too nested
     let read_task: tokio::task::JoinHandle<Result<String>> = tokio::spawn(
         async move {
-            info!("Read task started");
-
             loop {
                 match read_full_pdu(&mut reader).await {
                     Ok((buf, pdu_type)) => {
@@ -192,7 +196,13 @@ async fn handle_client(tcp: TcpStream, socket_addr: SocketAddr) -> Result<()> {
                             )
                         ).await;
                     }
-                    Err(_e) => return Err("test".into()),
+                    Err(_e) => {
+                        event_tx.send(
+                            Event::TransportConnectionClosedIndication
+                        );
+                        error!("READ ERROR");
+                        return Err("test".into())
+                    }
                 }
             }
         }
@@ -217,17 +227,14 @@ async fn handle_event_task(
     calling: IpAddr,
     cancel: CancellationToken,
 ) -> Result<()> {
-    info!("Event task started");
     let mut conn = UpperLayerAcceptorConnection::new_server(called, calling);
 
-    loop {
-        tokio::select! {
-            _ = cancel.cancelled() => {
-                info!("Cancelled");
-                break;
-            }
-            _ = async {
-                let event = event_rx.recv().await.unwrap();
+    tokio::select! {
+        _ = cancel.cancelled() => {
+            info!("Cancelled");
+        }
+        _ = async {
+            while let Some(event) = event_rx.recv().await {
                 info!("Event received");
 
                 let (command, new_state) = handle_server_event(
@@ -241,9 +248,8 @@ async fn handle_event_task(
                 if let Some(cmd) = command {
                     command_tx.send(cmd).await;
                 }
-
-            } => {}
-        }
+            }
+        } => {}
     }
 
     Ok(())
@@ -258,20 +264,15 @@ async fn handle_command_task<W>(
 where
     W: AsyncWrite + Unpin,
 {
-    info!("Command task started");
-
-    loop {
-        tokio::select! {
-            _ = cancel.cancelled() => {
-                info!("Cancelled");
-                break;
-            }
-            _ = async {
-                let command = rx.recv().await.unwrap();
-
-                handle_command(&mut writer, command, user_connection.clone(), cancel.clone()).await;
-            } => {}
+    tokio::select! {
+        _ = cancel.cancelled() => {
+            info!("Cancelled");
         }
+        _ = async {
+            while let Some(command) = rx.recv().await {
+                handle_command(&mut writer, command, user_connection.clone(), cancel.clone()).await;
+            }
+        } => {}
     }
 
     Ok(())

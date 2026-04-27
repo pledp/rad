@@ -22,6 +22,7 @@ pub enum Event {
     AssociateRequestPrimitive(AssociateRequestIndication),
     AssociateResponsePrimitiveReject(RejectedAssociateRequestResponse),
     AssociateResponsePrimitiveAccept(AcceptedAssociateRequestResponse),
+    TransportConnectionClosedIndication
 }
 
 #[derive(IntoStaticStr, Display, Debug)]
