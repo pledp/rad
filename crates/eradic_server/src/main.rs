@@ -32,8 +32,6 @@ use eradic_common::pdu::{DeserializedPdu, PDU_HEADER_LENGTH, PduType, read_pdu_h
 
 use eradic_common::service::AssociateRequestResponse;
 
-use eradic_adaptor::{UpperLayerServiceUser, UpperLayerServiceUserAsync};
-
 use crate::service_user::LocalUpperLayerServiceUser;
 
 pub type Result<T> = std::result::Result<T, Error>;
@@ -67,9 +65,26 @@ async fn main() -> Result<()> {
         let ul_scu_clone = Arc::clone(&ul_scu);
 
         tokio::spawn(async move {
+            let scu_handler = {
+                move |indication: Indication| {
+                    let ul_scu_closure = Arc::clone(&ul_scu_clone);
+                    async move {
+                        match indication {
+                            Indication::AssociateIndication(indication) => {
+                                Some(ul_scu_closure.handle_associate_request(indication).await)
+                            },
+                            Indication::AbortIndication(indication) => {
+                                return None;
+                            }
+                            _ => todo!(),
+                        }
+                    }
+                }
+            };
+
             client_count_clone.fetch_add(1, Ordering::AcqRel);
 
-            let result = handle_client(tcp, socket_addr, ul_scu_clone).await;
+            let result = handle_client(tcp, socket_addr, scu_handler).await;
 
             client_count_clone.fetch_sub(1, Ordering::AcqRel);
 
@@ -80,16 +95,15 @@ async fn main() -> Result<()> {
     Ok(())
 }
 
-async fn handle_client<U>(tcp: TcpStream, socket_addr: SocketAddr, ul_scu: Arc<U>) -> Result<()>
+async fn handle_client<F, Fut>(tcp: TcpStream, socket_addr: SocketAddr, scu_handler: F) -> Result<()>
 where
-    U: UpperLayerServiceUserAsync + Sync + Send + 'static
+    F: Fn(Indication) -> Fut + Send + Sync + 'static,
+    Fut: Future<Output = Option<Event>> + Send + 'static,
 {
     let span = span!(Level::INFO, "connection",
         ip = %socket_addr.ip(),
         port = socket_addr.port()
     );
-
-    span.record("Task", &"User task");
 
     let _guard = span.enter();
 
@@ -117,6 +131,7 @@ where
         Level::INFO,
         "UL SCU connection task",
     );
+
     let user_task = tokio::spawn(
         async move {
             loop {
@@ -126,18 +141,8 @@ where
                     <&str>::from(&indication)
                 );
 
-                match indication {
-                    Indication::AssociateIndication(indication) => {
-                        info!("Creating SCU connection");
-
-                        let event = ul_scu.handle_associate_request(indication).await;
-
-                        event_tx_user.send(event).await;
-                    },
-                    Indication::AbortIndication(indication) => {
-                        return;
-                    }
-                    _ => todo!(),
+                if let Some(event) = scu_handler(indication).await {
+                    event_tx_user.send(event).await;
                 }
             }
         }

@@ -78,6 +78,7 @@ async fn send_rq(tcp: &mut TcpStream, pdu: AssociateRqAcPdu) -> Result<()> {
     writer
         .write_all(serialize_abort_pdu(&abort).as_slice())
         .await?;
+    writer.flush().await?;
 
     let mut buffer = vec![0; 1024];
     let n = writer.read(&mut buffer).await?;

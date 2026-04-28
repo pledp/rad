@@ -14,7 +14,7 @@ use eradic_common::{
     },
 };
 
-use eradic_adaptor::{ServiceUserError, UpperLayerServiceUser, UpperLayerServiceUserAsync};
+use eradic_adaptor::{ServiceUserError};
 
 pub type ApplicationEntityRegistry = HashMap<String, Arc<Mutex<Pacs>>>;
 
@@ -53,11 +53,8 @@ impl LocalUpperLayerServiceUser {
         registry.insert("rad".to_string(), Arc::new(Mutex::new(Pacs {})));
         Self { application_entities: registry }
     }
-}
 
-#[async_trait]
-impl UpperLayerServiceUserAsync for LocalUpperLayerServiceUser {
-    async fn handle_associate_request(&self, indication: AssociateRequestIndication) -> Event {
+    pub async fn handle_associate_request(&self, indication: AssociateRequestIndication) -> Event {
         match self.application_entities.get(&indication.called_ae) {
             Some(pacs) => {
                 let event = {
