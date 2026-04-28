@@ -32,7 +32,7 @@ use eradic_common::pdu::{DeserializedPdu, PDU_HEADER_LENGTH, PduType, read_pdu_h
 
 use eradic_common::service::AssociateRequestResponse;
 
-use eradic_adaptor::{UpperLayerServiceUser, UpperLayerServiceUserAsync, UpperLayerServiceUserConnection, UpperLayerServiceUserConnectionAsync};
+use eradic_adaptor::{UpperLayerServiceUser, UpperLayerServiceUserAsync};
 
 use crate::service_user::LocalUpperLayerServiceUser;
 
@@ -119,8 +119,6 @@ where
     );
     let user_task = tokio::spawn(
         async move {
-            let mut conn: Option<Box<dyn UpperLayerServiceUserConnectionAsync>> = None;
-
             loop {
                 let indication = user_rx.recv().await.unwrap();
                 info!(
@@ -131,15 +129,8 @@ where
                 match indication {
                     Indication::AssociateIndication(indication) => {
                         info!("Creating SCU connection");
-                        conn = Some(
-                            ul_scu.create_scu_connection(&indication.called_ae).unwrap(),
-                        );
 
-                        let event = if let Some(c) = conn.as_mut() {
-                            c.handle_associate_request(indication).await
-                        } else {
-                            todo!()
-                        };
+                        let event = ul_scu.handle_associate_request(indication).await;
 
                         event_tx_user.send(event).await;
                     },

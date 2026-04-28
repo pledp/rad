@@ -1,9 +1,7 @@
 use std::collections::HashMap;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use async_trait::async_trait;
-
-use tokio::sync::{Mutex};
 
 use eradic_common::service::PresentationContextDefinitionResultList;
 use eradic_common::{
@@ -16,7 +14,7 @@ use eradic_common::{
     },
 };
 
-use eradic_adaptor::{ServiceUserError, UpperLayerServiceUser, UpperLayerServiceUserAsync, UpperLayerServiceUserConnection, UpperLayerServiceUserConnectionAsync};
+use eradic_adaptor::{ServiceUserError, UpperLayerServiceUser, UpperLayerServiceUserAsync};
 
 pub type ApplicationEntityRegistry = HashMap<String, Arc<Mutex<Pacs>>>;
 
@@ -45,19 +43,6 @@ impl Pacs {
     }
 }
 
-
-pub struct LocalUpperLayerServiceUserConnection {
-    pacs: Arc<Mutex<Pacs>>
-}
-
-#[async_trait]
-impl UpperLayerServiceUserConnectionAsync for LocalUpperLayerServiceUserConnection {
-    async fn handle_associate_request(&mut self, indication: AssociateRequestIndication) -> Event {
-        let mut guard = self.pacs.lock().await;
-        (*guard).handle_associate_request(indication)
-    }
-}
-
 pub struct LocalUpperLayerServiceUser {
     application_entities: ApplicationEntityRegistry,
 }
@@ -70,16 +55,18 @@ impl LocalUpperLayerServiceUser {
     }
 }
 
+#[async_trait]
 impl UpperLayerServiceUserAsync for LocalUpperLayerServiceUser {
-    fn create_scu_connection(
-        &self,
-        ae: &str,
-    ) -> Result<Box<dyn UpperLayerServiceUserConnectionAsync>, ServiceUserError> {
-        match self.application_entities.get(ae) {
-            Some(pacs) => Ok(Box::new(LocalUpperLayerServiceUserConnection {
-                pacs: Arc::clone(pacs),
-            })),
-            None => Err(ServiceUserError::ServiceUserNotFound),
+    async fn handle_associate_request(&self, indication: AssociateRequestIndication) -> Event {
+        match self.application_entities.get(&indication.called_ae) {
+            Some(pacs) => {
+                let event = {
+                    let mut guard = pacs.lock().unwrap();
+                    guard.handle_associate_request(indication)
+                };
+                event
+            },
+            _ => todo!(),
         }
     }
 }
