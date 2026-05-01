@@ -19,8 +19,8 @@ pub struct AssociateRequestIndication {
     pub called_ae: String,
     pub calling_ae: String,
     pub user_information: Vec<UserInformation>,
-    pub called_address: IpAddr,
-    pub calling_address: IpAddr,
+    pub called_address: String,
+    pub calling_address: String,
     pub presentation_context: Vec<PresentationContextDefinitionList>,
 }
 
@@ -30,8 +30,8 @@ impl AssociateRequestIndication {
         called_ae: String,
         calling_ae: String,
         user_information: Vec<UserInformation>,
-        called_address: IpAddr,
-        calling_address: IpAddr,
+        called_address: String,
+        calling_address: String,
         presentation_context: Vec<PresentationContextDefinitionList>,
     ) -> Self {
         Self {
@@ -47,8 +47,8 @@ impl AssociateRequestIndication {
 
     pub fn from_rq_pdu(
         pdu: AssociateRqAcPdu,
-        called_address: &IpAddr,
-        calling_address: &IpAddr,
+        called_address: String,
+        calling_address: String,
     ) -> Self {
         // Create Vector of [PresentationContextDefinitionList]
         let presentation_context = pdu
@@ -68,8 +68,8 @@ impl AssociateRequestIndication {
             called_ae: pdu.called_ae().to_string(),
             calling_ae: pdu.calling_ae().to_string(),
             user_information,
-            called_address: *called_address,
-            calling_address: *calling_address,
+            called_address: called_address,
+            calling_address: calling_address,
             presentation_context,
         }
     }
@@ -114,39 +114,38 @@ impl PresentationContextDefinitionList {
 }
 
 #[derive(Clone, Debug, PartialEq)]
-pub struct PresentationContextDefinitionResultList {
+pub struct PresentationContextDefinitionResult {
     pub context_id: u8,
-    pub abstract_syntax: String,
-    pub transfer_syntax: Vec<String>,
+    pub transfer_syntax: String,
     pub result: PresentationContextResult,
 }
 
-impl PresentationContextDefinitionResultList {
+impl PresentationContextDefinitionResult {
     pub fn new(
         context_id: u8,
-        abstract_syntax: String,
-        transfer_syntax: Vec<String>,
+        transfer_syntax: String,
         result: PresentationContextResult,
     ) -> Self {
         Self {
             context_id,
-            abstract_syntax,
             transfer_syntax,
             result,
         }
     }
+}
 
-    pub fn from_definition_list(
-        list: PresentationContextDefinitionList,
-        result: PresentationContextResult,
-    ) -> Self {
-        Self {
+pub fn definition_result_vec_from_definition_list(
+    list: PresentationContextDefinitionList,
+    result: PresentationContextResult,
+) -> Vec<PresentationContextDefinitionResult> {
+    list.transfer_syntax
+        .into_iter()
+        .map(|ts| PresentationContextDefinitionResult {
             context_id: list.context_id,
-            abstract_syntax: list.abstract_syntax,
-            transfer_syntax: list.transfer_syntax,
-            result,
-        }
-    }
+            transfer_syntax: ts,
+            result: result.clone(),
+        })
+        .collect()
 }
 
 #[derive(Debug, Error, PartialEq, Eq)]
@@ -224,7 +223,7 @@ pub struct AcceptedAssociateRequestResponse {
     pub called_ae: String,
     pub calling_ae: String,
     pub user_information: Vec<UserInformation>,
-    pub presentation_context_result: Vec<PresentationContextDefinitionResultList>,
+    pub presentation_context_result: Vec<PresentationContextDefinitionResult>,
 }
 
 impl AcceptedAssociateRequestResponse {
@@ -233,7 +232,7 @@ impl AcceptedAssociateRequestResponse {
         called_ae: String,
         calling_ae: String,
         user_information: Vec<UserInformation>,
-        presentation_context_result: Vec<PresentationContextDefinitionResultList>,
+        presentation_context_result: Vec<PresentationContextDefinitionResult>,
     ) -> Self {
         Self {
             context_name,
@@ -244,7 +243,7 @@ impl AcceptedAssociateRequestResponse {
         }
     }
 
-    pub fn presentation_context_result(&self) -> &Vec<PresentationContextDefinitionResultList> {
+    pub fn presentation_context_result(&self) -> &Vec<PresentationContextDefinitionResult> {
         &self.presentation_context_result
     }
 
@@ -266,53 +265,45 @@ impl RejectedAssociateRequestResponse {
 }
 
 #[derive(Debug, PartialEq)]
-pub struct AbortIndication {
-    source: AbortSource,
+pub struct ProviderAbortIndication {
     reason: AbortReason
 }
 
+impl ProviderAbortIndication {
+    pub fn new(reason: AbortReason) -> Self {
+        Self {
+            reason
+        }
+    }
+}
+
+#[derive(Debug, PartialEq)]
+pub struct AbortIndication {
+    source: AbortSource,
+}
+
 impl AbortIndication {
+    pub fn new(
+        source: AbortSource,
+    ) -> Self {
+        Self {
+            source,
+        }
+    }
+
     pub fn from_pdu(pdu: AssociateAbortPdu) -> Self {
         Self {
             source: pdu.source,
-            reason: pdu.reason
         }
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use std::string::String;
-
-    use crate::associate::presentation_context::PresentationContextResult;
     use crate::service::{
-        PresentationContextDefinitionList, PresentationContextDefinitionListBuilder,
-        PresentationContextDefinitionListBuilderError, PresentationContextDefinitionResultList,
+        PresentationContextDefinitionListBuilder,
+        PresentationContextDefinitionListBuilderError
     };
-
-    #[test]
-    fn test_presentation_context_definition_result_list() {
-        let definition_list_id = 1;
-        let definition_list_abstract = String::from("1.2.840.10008.1.1");
-        let definition_list_transfer = vec![String::from("1.2.840.10008.1.2")];
-
-        let definition_list = PresentationContextDefinitionList::new(
-            definition_list_id.clone(),
-            definition_list_abstract.clone(),
-            definition_list_transfer.clone(),
-        );
-
-        let result = PresentationContextResult::Acceptance;
-        let result_list = PresentationContextDefinitionResultList::from_definition_list(
-            definition_list,
-            result.clone(),
-        );
-
-        assert_eq!(result_list.context_id, definition_list_id);
-        assert_eq!(result_list.abstract_syntax, definition_list_abstract);
-        assert_eq!(result_list.transfer_syntax, definition_list_transfer);
-        assert_eq!(result_list.result, result);
-    }
 
     #[test]
     fn test_definition_list_builder_ok() {

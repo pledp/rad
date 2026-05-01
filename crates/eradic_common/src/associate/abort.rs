@@ -125,13 +125,12 @@ pub fn deserialize_abort_pdu<T: Read>(
     let mut item_type = [0u8; PDU_TYPE_LENGTH];
     reader.read_exact(&mut item_type)?;
 
-    PduType::try_from(item_type[0])
-        .map_err(|_| PduDeserializationError::InvalidItemType)
-        .and_then(|t| if t == PduType::Abort {
-            Ok(())
-        } else {
-            Err(PduDeserializationError::InvalidItemType)
-        })?;
+    let pdu_type = PduType::try_from(item_type[0])?;
+
+    match pdu_type {
+        PduType::Abort => {}
+        _ => return Err(PduDeserializationError::UnexpectedPduType(pdu_type))
+    };
 
     read_padding(reader, 1);
 
@@ -180,7 +179,7 @@ mod tests {
 
         let result = deserialize_abort_pdu(&mut reader);
 
-        assert!(matches!(result, Err(PduDeserializationError::InvalidItemType)));
+        assert!(matches!(result, Err(PduDeserializationError::InvalidItemType(0xFF))));
     }
 
     #[test]

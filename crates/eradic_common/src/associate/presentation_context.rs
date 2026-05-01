@@ -22,6 +22,12 @@ pub struct PresentationContextItem {
     pub transfer_syntax_items: Vec<SyntaxItem>,
 }
 
+#[derive(Debug, Error)]
+pub enum PresentationContextError {
+    #[error("Invalid item type, must be `AssociateItemType::PresentationContextRq` or `AssociateItemType::PresentationContextAc`: {0}")]
+    InvalidPduType(AssociateItemType),
+}
+
 impl PresentationContextItem {
     pub fn new(
         item_type: AssociateItemType,
@@ -29,7 +35,7 @@ impl PresentationContextItem {
         result: Option<PresentationContextResult>,
         abstract_syntax_item: Option<SyntaxItem>,
         transfer_syntax_items: Vec<SyntaxItem>,
-    ) -> crate::Result<Self> {
+    ) -> Result<Self, PresentationContextError> {
         match item_type {
             AssociateItemType::PresentationContextRq => Ok(PresentationContextItem::new_rq(
                 context_id,
@@ -41,7 +47,7 @@ impl PresentationContextItem {
                 result.unwrap(),
                 transfer_syntax_items,
             )),
-            _ => Err("Invalid type".into()),
+            _ => Err(PresentationContextError::InvalidPduType(item_type)),
         }
     }
 
@@ -127,7 +133,7 @@ impl TryFrom<u8> for PresentationContextResult {
             0x02 => Ok(PresentationContextResult::NoReason),
             0x03 => Ok(Self::AbstractSyntaxNotSupported),
             0x04 => Ok(Self::TransferSyntaxesNotSupported),
-            _ => Err("Invalid valie".into()),
+            _ => Err("Invalid value".into()),
         }
     }
 }
@@ -193,7 +199,7 @@ impl PresentationContextItemBuilder {
         self
     }
 
-    pub fn build(self) -> crate::Result<PresentationContextItem> {
+    pub fn build(self) -> Result<PresentationContextItem, PresentationContextError> {
         PresentationContextItem::new(
             self.item_type.unwrap(),
             self.context_id.unwrap(),
@@ -277,11 +283,11 @@ impl SyntaxItemBuilder {
         self
     }
 
-    pub fn build(self) -> crate::Result<SyntaxItem> {
-        Ok(SyntaxItem::new(
+    pub fn build(self) -> Result<SyntaxItem, SyntaxItemError> {
+        SyntaxItem::new(
             self.item_type.unwrap(),
             &self.syntax.unwrap(),
-        )?)
+        )
     }
 }
 
@@ -324,7 +330,7 @@ pub(crate) fn serialize_presentation_context_item(
 /// [deserialize_presentation_context_item] does not handle correct ordering.
 pub(crate) fn deserialize_presentation_context_item<T: Read>(
     reader: &mut T,
-) -> crate::Result<PresentationContextItem> {
+) -> Result<PresentationContextItem, PduDeserializationError> {
     let mut pdu_type = [0u8; PDU_TYPE_LENGTH];
     reader.read_exact(&mut pdu_type)?;
 
@@ -359,7 +365,7 @@ pub(crate) fn deserialize_presentation_context_item<T: Read>(
                 .fill_buf()?
                 .first()
                 .copied()
-                .ok_or_else(|| "Invalid item type".to_string())?,
+                .unwrap()
         )?;
 
         match next_type {
@@ -370,19 +376,17 @@ pub(crate) fn deserialize_presentation_context_item<T: Read>(
                 transfer_syntax_items.push(deserialize_syntax_item(&mut syntax_reader)?);
             }
 
-            _ => {
-                return Err("Invalid item type".into());
-            }
+            _ => {}
         }
-    }
+    };
 
-    PresentationContextItem::new(
+    Ok(PresentationContextItem::new(
         pdu_type[0].try_into()?,
         context_id[0],
         result[0].try_into().ok(),
         abstract_syntax_item,
         transfer_syntax_items,
-    )
+    )?)
 }
 
 pub(crate) fn serialize_syntax_item(item: &SyntaxItem) -> Vec<u8> {
@@ -419,8 +423,7 @@ pub(crate) fn deserialize_syntax_item<T: Read>(
 
     Ok(SyntaxItem::new(
         item_type[0]
-            .try_into()
-            .map_err(|_| PduDeserializationError::InvalidItemType)?,
+            .try_into()?,
         &String::from_utf8(syntax)?,
     )?)
 }

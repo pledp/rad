@@ -5,7 +5,7 @@ use thiserror::Error;
 use crate::{
     associate::{AssociateRqAcPdu, abort::AssociateAbortPdu},
     service::{
-        AbortIndication, AcceptedAssociateRequestResponse, AssociateRequestIndication, RejectedAssociateRequestResponse
+        AbortIndication, AcceptedAssociateRequestResponse, AssociateRequestIndication, ProviderAbortIndication, RejectedAssociateRequestResponse
     },
 };
 
@@ -29,6 +29,7 @@ pub enum Event {
 pub enum Command {
     AssociateIndication(AssociateRequestIndication),
     AbortIndication(AbortIndication),
+    ProviderAbortIndication(ProviderAbortIndication),
     AssociateResponse(RejectedAssociateRequestResponse),
     AssociateAcceptPdu(AcceptedAssociateRequestResponse),
     AssociateRequestPdu,
@@ -46,6 +47,7 @@ pub enum IndicationError {
 pub enum Indication {
     AssociateIndication(AssociateRequestIndication),
     AbortIndication(AbortIndication),
+    ProviderAbortIndication(ProviderAbortIndication)
 }
 
 impl Indication {

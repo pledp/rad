@@ -1,8 +1,8 @@
 use std::io::{BufRead, BufReader, Read};
 
-use crate::Result;
 use crate::associate::AssociateItemType;
 use crate::associate::ITEM_LENGTH_LENGTH;
+use crate::associate::PduDeserializationError;
 use crate::pdu::{PDU_TYPE_LENGTH, read_padding, vec8_add_padding};
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -66,8 +66,8 @@ impl UserInfoItemBuilder {
         self
     }
 
-    pub fn build(self) -> Result<UserInfoItem> {
-        Ok(UserInfoItem::new(self.sub_items))
+    pub fn build(self) -> UserInfoItem {
+        UserInfoItem::new(self.sub_items)
     }
 }
 
@@ -86,7 +86,7 @@ pub fn serialize_user_info_item(item: &UserInfoItem) -> Vec<u8> {
     pdu
 }
 
-pub fn deserialize_user_info_item<T: Read>(reader: &mut T) -> Result<UserInfoItem> {
+pub fn deserialize_user_info_item<T: Read>(reader: &mut T) -> Result<UserInfoItem, PduDeserializationError> {
     let mut pdu_type = [0u8; PDU_TYPE_LENGTH];
     reader.read_exact(&mut pdu_type)?;
 
@@ -165,7 +165,7 @@ pub fn serialize_sub_item(item: &UserInformationSubItem) -> Vec<u8> {
     pdu
 }
 
-pub fn deserialize_sub_item<T: Read>(reader: &mut T) -> Result<UserInformationSubItem> {
+pub fn deserialize_sub_item<T: Read>(reader: &mut T) -> Result<UserInformationSubItem, PduDeserializationError> {
     let mut pdu_type = [0u8; PDU_TYPE_LENGTH];
     reader.read_exact(&mut pdu_type)?;
     let item_type = pdu_type[0];

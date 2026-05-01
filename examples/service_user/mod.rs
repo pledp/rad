@@ -1,9 +1,7 @@
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
-use async_trait::async_trait;
-
-use eradic_common::service::PresentationContextDefinitionResultList;
+use eradic::service::PresentationContextDefinitionResult;
 use eradic_common::{
     associate::{
         presentation_context::PresentationContextResult,
@@ -14,8 +12,6 @@ use eradic_common::{
     },
 };
 
-use eradic_adaptor::{ServiceUserError};
-
 pub type ApplicationEntityRegistry = HashMap<String, Arc<Mutex<Pacs>>>;
 
 struct Pacs {}
@@ -23,13 +19,12 @@ struct Pacs {}
 impl Pacs {
     pub fn handle_associate_request(&mut self, indication: AssociateRequestIndication) -> Event {
         let presentation_context_result = indication
-            .presentation_context
-            .into_iter()
-            .map(|ctx| {
-                PresentationContextDefinitionResultList::from_definition_list(
-                    ctx,
-                    PresentationContextResult::Acceptance,
-                )
+            .presentation_context()
+            .iter()
+            .map(|item| PresentationContextDefinitionResult {
+                context_id: item.context_id,
+                transfer_syntax: item.transfer_syntax[0].clone(),
+                result: PresentationContextResult::Acceptance,
             })
             .collect();
 

@@ -1,8 +1,9 @@
 use std::convert::TryFrom;
 use std::io::Read;
 
-use crate::Result;
-use crate::associate::AssociateRqAcPdu;
+use thiserror::Error;
+
+use crate::associate::{AssociateRqAcPdu, PduDeserializationError};
 use crate::associate::abort::AssociateAbortPdu;
 
 /// The length of the PDU-type field in the PDU. The Item Type field is the same in A-Associate PDU's.
@@ -34,9 +35,9 @@ pub enum PduType {
 }
 
 impl TryFrom<u8> for PduType {
-    type Error = crate::Error;
+    type Error = PduDeserializationError;
 
-    fn try_from(value: u8) -> Result<Self> {
+    fn try_from(value: u8) -> Result<Self, Self::Error> {
         match value {
             0x01 => Ok(PduType::AssociateRequest),
             0x02 => Ok(PduType::AssociateAccept),
@@ -45,7 +46,7 @@ impl TryFrom<u8> for PduType {
             0x05 => Ok(PduType::ReleaseRequest),
             0x06 => Ok(PduType::ReleaseResponse),
             0x07 => Ok(PduType::Abort),
-            _ => Err("Invalid type".into()),
+            _ => Err(PduDeserializationError::InvalidPduType(value)),
         }
     }
 }
@@ -64,12 +65,13 @@ impl From<PduType> for u8 {
     }
 }
 
+#[derive(Debug)]
 pub struct PduHeader {
     pub pdu_type: PduType,
     pub length: u32,
 }
 
-pub fn read_pdu_header<R: Read>(reader: &mut R) -> Result<PduHeader> {
+pub fn read_pdu_header<R: Read>(reader: &mut R) -> Result<PduHeader, PduDeserializationError> {
     let mut type_buf = [0u8; 1];
     reader.read_exact(&mut type_buf)?;
 

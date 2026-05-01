@@ -1,101 +1,56 @@
-mod service_user;
-
 use core::net::SocketAddr;
-use std::io::Cursor;
+use std::io::{Cursor, Read};
 use std::net::IpAddr;
 use std::string::String;
 use std::sync::{
     Arc,
     atomic::{AtomicI64, Ordering},
 };
-use std::thread::sleep;
+
+use thiserror::Error;
 
 use tokio::io::AsyncWrite;
 use tokio::time::{self, Sleep};
 use tokio::{
     io::{AsyncRead, AsyncReadExt, AsyncWriteExt},
     net::{TcpListener, TcpStream},
-    sync::{Mutex, mpsc},
+    sync::{mpsc},
 };
 use tokio_util::sync::CancellationToken;
 
 use tracing::{Instrument, Level, info, span};
-use tracing_log::log::error;
+use tracing_log::log::{error, warn};
 use tracing_subscriber::{FmtSubscriber, fmt};
 
 use eradic_common::associate::{
-    AssociateRqAcPdu, deserialize_associate_pdu, deserialized_pdu_from_reader, event_from_deserialized_pdu, serialize_associate_pdu
+    AssociateRqAcPdu, PduDeserializationError, deserialized_pdu_from_reader, event_from_deserialized_pdu, serialize_associate_pdu
 };
 use eradic_common::connection::{UpperLayerAcceptorConnection, handle_server_event};
 use eradic_common::event::{Command, Event, Indication};
-use eradic_common::pdu::{DeserializedPdu, PDU_HEADER_LENGTH, PduType, read_pdu_header};
-
+use eradic_common::pdu::{PDU_HEADER_LENGTH, PduType, read_pdu_header};
 use eradic_common::service::AssociateRequestResponse;
 
-use crate::service_user::LocalUpperLayerServiceUser;
-
-pub type Result<T> = std::result::Result<T, Error>;
-pub type Error = Box<dyn std::error::Error + Send + Sync>;
-
-#[tokio::main]
-async fn main() -> Result<()> {
-    tracing_log::LogTracer::init()?;
-
-    let subscriber = FmtSubscriber::builder()
-        .with_max_level(Level::DEBUG)
-        .with_file(true)
-        .with_line_number(true)
-        .fmt_fields(fmt::format::DefaultFields::new())
-        .finish();
-
-    tracing::subscriber::set_global_default(subscriber)?;
-
-    info!("System initialized");
-
-    let ul_scu = Arc::new(LocalUpperLayerServiceUser::new());
-
-    let server = TcpListener::bind("127.0.0.1:104").await?;
-    info!("Listening for connections...");
-
-    let client_count = Arc::new(AtomicI64::new(0));
-
-    loop {
-        let (tcp, socket_addr) = server.accept().await?;
-        let client_count_clone = Arc::clone(&client_count);
-        let ul_scu_clone = Arc::clone(&ul_scu);
-
-        tokio::spawn(async move {
-            let scu_handler = {
-                move |indication: Indication| {
-                    let ul_scu_closure = Arc::clone(&ul_scu_clone);
-                    async move {
-                        match indication {
-                            Indication::AssociateIndication(indication) => {
-                                Some(ul_scu_closure.handle_associate_request(indication).await)
-                            },
-                            Indication::AbortIndication(indication) => {
-                                return None;
-                            }
-                            _ => todo!(),
-                        }
-                    }
-                }
-            };
-
-            client_count_clone.fetch_add(1, Ordering::AcqRel);
-
-            let result = handle_client(tcp, socket_addr, scu_handler).await;
-
-            client_count_clone.fetch_sub(1, Ordering::AcqRel);
-
-            result
-        });
-    }
-
-    Ok(())
+#[derive(Debug, Error)]
+pub enum ServiceUserError {
+    #[error("Service User / Application Entity was not found")]
+    ServiceUserNotFound,
 }
 
-async fn handle_client<F, Fut>(tcp: TcpStream, socket_addr: SocketAddr, scu_handler: F) -> Result<()>
+#[derive(Debug, Error)]
+pub enum ReadError {
+    #[error(transparent)]
+    Io(#[from] std::io::Error),
+    #[error(transparent)]
+    PduDeserializationError(#[from] PduDeserializationError)
+}
+
+#[derive(Debug, Error)]
+pub enum HandleClientError {
+    #[error(transparent)]
+    Io(#[from] std::io::Error),
+}
+
+pub async fn handle_client<F, Fut>(tcp: TcpStream, socket_addr: SocketAddr, scu_handler: F) -> Result<(), HandleClientError>
 where
     F: Fn(Indication) -> Fut + Send + Sync + 'static,
     Fut: Future<Output = Option<Event>> + Send + 'static,
@@ -115,7 +70,8 @@ where
 
     let (mut reader, writer) = tcp.into_split();
 
-    let called = writer.local_addr()?.ip();
+    let called_address = writer.local_addr()?.ip();
+    let called_port = writer.local_addr()?.port();
 
     let (command_tx, command_rx) = mpsc::channel::<Command>(32);
     let (event_tx, event_rx) = mpsc::channel::<Event>(32);
@@ -123,6 +79,7 @@ where
 
     let cancel = CancellationToken::new();
     let child = cancel.child_token();
+    let child_2 = cancel.child_token();
 
     let event_tx_user = event_tx.clone();
 
@@ -134,8 +91,7 @@ where
 
     let user_task = tokio::spawn(
         async move {
-            loop {
-                let indication = user_rx.recv().await.unwrap();
+            while let Some(indication) = user_rx.recv().await {
                 info!(
                     "Received indication: {}",
                     <&str>::from(&indication)
@@ -145,8 +101,28 @@ where
                     event_tx_user.send(event).await;
                 }
             }
+
+            info!("All writers out of scope, exiting task");
         }
         .instrument(user_span)
+    );
+
+    let event_span = span!(
+        parent: span.clone(),
+        Level::INFO,
+        "UL SCU event task",
+    );
+    let event_task = tokio::spawn(
+        handle_event_task(
+            event_rx,
+            command_tx.clone(),
+            writer.local_addr()?.ip(),
+            writer.local_addr()?.port(),
+            socket_addr.ip(),
+            socket_addr.port(),
+            child,
+        )
+        .instrument(event_span),
     );
 
     let command_span = span!(
@@ -159,51 +135,41 @@ where
             .instrument(command_span),
     );
 
-    let event_span = span!(
-        parent: span.clone(),
-        Level::INFO,
-        "UL SCU event task",
-    );
-    let event_task = tokio::spawn(
-        handle_event_task(
-            event_rx,
-            command_tx.clone(),
-            called,
-            socket_addr.ip(),
-            child,
-        )
-        .instrument(event_span),
-    );
 
     let read_span = span!(
         parent: span.clone(),
         Level::INFO,
         "UL SCU PDU read task",
     );
+
     // TODO: Move to other functions, too nested
-    let read_task: tokio::task::JoinHandle<Result<String>> = tokio::spawn(
-        async move {
-            loop {
-                match read_full_pdu(&mut reader).await {
-                    Ok((buf, pdu_type)) => {
-                        event_tx.send(
-                            event_from_deserialized_pdu(
-                                deserialized_pdu_from_reader(&mut Cursor::new(buf), pdu_type)?
-                            )
-                        ).await;
-                    }
-                    Err(_e) => {
-                        event_tx.send(
-                            Event::TransportConnectionClosedIndication
-                        );
-                        error!("READ ERROR");
-                        return Err("test".into())
-                    }
+    let read_task: tokio::task::JoinHandle<Result<(), ReadError>> = tokio::spawn(async move {
+        tokio::select! {
+            _ = child_2.cancelled() => {
+                return Ok(())
+            }
+            result = async {
+                loop {
+                    let (buf, pdu_type) = read_full_pdu(&mut reader).await?;
+                    info!("PDU received: {:?}", pdu_type);
+
+                    event_tx.send(
+                        event_from_deserialized_pdu(
+                            deserialized_pdu_from_reader(&mut Cursor::new(buf), pdu_type)?
+                        )
+                    ).await;
                 }
+            } => {
+                warn!("Task exited unexpectedly: {:?}", result);
+
+                event_tx.send(
+                    Event::TransportConnectionClosedIndication
+                ).await;
+
+                result
             }
         }
-        .instrument(read_span),
-    );
+    }.instrument(read_span));
 
     tokio::join!(command_task, event_task, user_task, read_task);
 
@@ -220,10 +186,12 @@ async fn handle_event_task(
     mut event_rx: mpsc::Receiver<Event>,
     command_tx: mpsc::Sender<Command>,
     called: IpAddr,
+    called_port: u16,
     calling: IpAddr,
+    calling_port: u16,
     cancel: CancellationToken,
-) -> Result<()> {
-    let mut conn = UpperLayerAcceptorConnection::new_server(called, calling);
+) {
+    let mut conn = UpperLayerAcceptorConnection::new_server(called, called_port, calling, calling_port);
 
     tokio::select! {
         _ = cancel.cancelled() => {
@@ -234,7 +202,7 @@ async fn handle_event_task(
                 info!("Event received");
 
                 let (command, new_state) = handle_server_event(
-                    &conn,
+                    conn,
                     event,
                 )
                 .unwrap();
@@ -247,8 +215,6 @@ async fn handle_event_task(
             }
         } => {}
     }
-
-    Ok(())
 }
 
 async fn handle_command_task<W>(
@@ -256,7 +222,7 @@ async fn handle_command_task<W>(
     mut rx: mpsc::Receiver<Command>,
     user_connection: mpsc::Sender<Indication>,
     cancel: CancellationToken,
-) -> Result<()>
+)
 where
     W: AsyncWrite + Unpin,
 {
@@ -270,8 +236,6 @@ where
             }
         } => {}
     }
-
-    Ok(())
 }
 
 async fn handle_command<W>(
@@ -303,11 +267,19 @@ where
             cancel.cancel();
         }
 
+        Command::ProviderAbortIndication(indication) => {
+            user_connection
+                .send(Indication::ProviderAbortIndication(indication))
+                .await;
+
+            cancel.cancel();
+        }
+
         _ => todo!(),
     };
 }
 
-async fn read_full_pdu<R>(reader: &mut R) -> Result<(Vec<u8>, PduType)>
+async fn read_full_pdu<R>(reader: &mut R) -> Result<(Vec<u8>, PduType), ReadError>
 where
     R: AsyncRead + Unpin,
 {
@@ -316,6 +288,7 @@ where
 
     let mut cursor = Cursor::new(header_buf);
     let header = read_pdu_header(&mut cursor)?;
+    info!("{:?}", header);
 
     let mut buffer = vec![0u8; PDU_HEADER_LENGTH + header.length as usize];
     buffer[..6].copy_from_slice(&header_buf);
@@ -328,7 +301,7 @@ where
 async fn handle_Associate_response<W>(
     response: AssociateRequestResponse,
     tcp: &mut W,
-) -> Result<()>
+)
 where
     W: AsyncWrite + Unpin,
 {
@@ -336,10 +309,9 @@ where
         AssociateRequestResponse::Accepted(inner) => {
             info!("Sending A-Associate-AC PDU");
 
-            let pdu = AssociateRqAcPdu::from_response(&inner)?;
+            let pdu = AssociateRqAcPdu::from_response(&inner).unwrap();
             tcp.write_all(serialize_associate_pdu(&pdu).as_slice())
-                .await?;
-            Ok(())
+                .await;
         }
         AssociateRequestResponse::Rejected(inner) => {
             info!("Sending A-Associate-RJ PDU: {:?}", inner);

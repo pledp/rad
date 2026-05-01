@@ -1,9 +1,0 @@
-[package]
-name = "eradic_adaptor"
-version = "0.1.0"
-edition = "2024"
-
-[dependencies]
-async-trait = "0.1.89"
-eradic_common = { path = "../eradic_common", version = "0.1.0" }
-thiserror = "2.0.18"

@@ -6,12 +6,13 @@ mod user_information;
 
 use std::io::Read;
 
+use strum_macros::Display;
 use thiserror::Error;
 
 pub use rq_ac::*;
 pub use user_information::*;
 
-use crate::{DeserializedPdu, Result, associate::abort::deserialize_abort_pdu, event::Event, pdu::PduType};
+use crate::{DeserializedPdu, associate::abort::deserialize_abort_pdu, event::Event, pdu::PduType};
 
 /// Length of the Item length field.
 const ITEM_LENGTH_LENGTH: usize = 2;
@@ -29,17 +30,14 @@ pub enum RejectedAssociateResult {
 }
 
 /// Peek into the next byte and output item type.
-fn next_byte_item_type<T>(item_type: T) -> Result<AssociateItemType>
+fn next_byte_item_type<T>(item_type: T) -> Result<AssociateItemType, PduDeserializationError>
 where
-    T: TryInto<AssociateItemType>,
-    <T as TryInto<AssociateItemType>>::Error: std::error::Error + Send + Sync + 'static,
+    T: TryInto<AssociateItemType, Error = PduDeserializationError>,
 {
-    item_type
-        .try_into()
-        .map_err(|e| Box::new(e) as Box<dyn std::error::Error + Send + Sync>)
+    item_type.try_into()
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Display)]
 #[repr(u8)]
 pub enum AssociateItemType {
     ApplicationContext,
@@ -61,7 +59,7 @@ impl TryFrom<u8> for AssociateItemType {
             0x30 => Ok(AssociateItemType::AbstractSyntax),
             0x40 => Ok(AssociateItemType::TransferSyntax),
             0x50 => Ok(AssociateItemType::UserInformation),
-            _ => Err(PduDeserializationError::InvalidItemType),
+            _ => Err(PduDeserializationError::InvalidItemType(value)),
         }
     }
 }
@@ -81,19 +79,28 @@ impl From<AssociateItemType> for u8 {
 
 #[derive(Debug, Error)]
 pub enum PduDeserializationError {
-    #[error("Item type does not exist")]
-    InvalidItemType,
+    #[error("Item type does not exist: {0}")]
+    InvalidItemType(u8),
     #[error(transparent)]
     InvalidSyntaxItem(#[from] presentation_context::SyntaxItemError),
+    #[error(transparent)]
+    InvalidPresentationItem(#[from] presentation_context::PresentationContextError),
+
     #[error(transparent)]
     InvalidLength(#[from] std::io::Error),
     #[error(transparent)]
     InvalidEncoding(#[from] std::string::FromUtf8Error),
     #[error(transparent)]
-    InvalidAbortPdu(#[from] abort::AbortParseError)
+    InvalidAbortPdu(#[from] abort::AbortParseError),
+
+    #[error("Invalid PDU type: {0}")]
+    InvalidPduType(u8),
+    #[error("Unexpected PDU type: {0:?}")]
+    UnexpectedPduType(PduType),
+
 }
 
-pub fn deserialized_pdu_from_reader<R>(reader: &mut R, pdu_type: PduType) -> Result<DeserializedPdu>
+pub fn deserialized_pdu_from_reader<R>(reader: &mut R, pdu_type: PduType) -> std::result::Result<DeserializedPdu, PduDeserializationError>
 where
     R: Read
 {

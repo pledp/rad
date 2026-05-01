@@ -1,8 +1,9 @@
 use std::net::{IpAddr, Ipv4Addr};
-use std::path::Path;
+use std::path::{Path};
 use std::thread::sleep;
 use std::time::Duration;
 
+use eradic::connection::{UpperLayerRequestorConnection, format_presentation_address, handle_client_event};
 use eradic_common::associate::abort::{AssociateAbortPdu, serialize_abort_pdu};
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt, BufWriter},
@@ -30,7 +31,7 @@ async fn main() -> Result<()> {
     let mut stream = TcpStream::connect("127.0.0.1:104").await?;
     println!("Connected to server");
 
-    let mut conn = UpperLayerAcceptorConnection::new_client();
+    let mut conn = UpperLayerRequestorConnection::new_client();
 
     // TODO: Builder
     let indication = AssociateRequestIndication::new(
@@ -40,8 +41,8 @@ async fn main() -> Result<()> {
         vec![UserInformation::MaximumLength(MaximumLength {
             maximum_length: 300,
         })],
-        IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)),
-        IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)),
+        format_presentation_address(stream.local_addr()?.ip(), stream.local_addr()?.port()),
+        format_presentation_address(stream.peer_addr()?.ip(), stream.peer_addr()?.port()),
         vec![
             PresentationContextDefinitionListBuilder::new()
                 .context_id(1)
@@ -51,8 +52,7 @@ async fn main() -> Result<()> {
         ],
     );
 
-    conn.handle_event(Event::AssociateRequestPrimitive(indication.clone()));
-    conn.handle_event(Event::ConnectionOpen);
+    let (conn, command) = handle_client_event(conn, Event::ConnectionOpen)?;
 
     let pdu = AssociateRqAcPdu::from_indication(&indication)?;
 
@@ -73,18 +73,19 @@ async fn send_rq(tcp: &mut TcpStream, pdu: AssociateRqAcPdu) -> Result<()> {
         .await?;
     writer.flush().await?;
 
-    sleep(Duration::from_secs(2));
-
-    writer
-        .write_all(serialize_abort_pdu(&abort).as_slice())
-        .await?;
-    writer.flush().await?;
 
     let mut buffer = vec![0; 1024];
     let n = writer.read(&mut buffer).await?;
     println!("Server replied: {}", String::from_utf8_lossy(&buffer[..n]));
 
-    print!("Waiting for more packets");
+    /*
+    writer
+        .write_all(serialize_abort_pdu(&abort).as_slice())
+        .await?;
+    writer.flush().await?;
+*/
+
+    println!("Waiting for more packets");
     let mut buffer = vec![0; 1024];
     let _n = writer.read(&mut buffer).await?;
     Ok(())

@@ -2,9 +2,11 @@ use std::fmt;
 use std::io::{BufRead, BufReader, Read};
 use std::string::String;
 
+use thiserror::Error;
+
 use log::error;
 
-use crate::Result;
+use crate::associate::{PduDeserializationError, presentation_context};
 use crate::associate::presentation_context::{
     SyntaxItemBuilder, deserialize_presentation_context_item, serialize_presentation_context_item,
 };
@@ -27,37 +29,15 @@ const AE_LENGTH: usize = 16;
 /// Length of sub-items without the variable field.
 const SUB_ITEM_NO_VARIABLE_FIELDS_LENGTH: u16 = 4;
 
-/// Events related to A-ASSOCIATE. Events lead to actions defined by the DICOM standard.
-///
-/// ISO/TR 2382:2015 defines primitives. Primitives are abstract interactions between a service user and a service provider.
-/// In DICOM, primitives are interactions between the DICOM server (service provider) and the client (service user).
-///
-/// See [DICOM standard part 8 subsection 9](https://dicom.nema.org/medical/dicom/current/output/html/part08.html#sect_9).
-enum AssociateEvent {
-    PrimitiveRequestAssociate,
-    PrimitiveResponseAccept,
-    PrimitiveResponseReject,
-    PrimitiveConfirmTransport,
-    PrimitiveIndicationTransport,
-    AssociateRequest,
-    AssociateAccept,
-    AssociateReject,
+#[derive(Debug, Error)]
+pub enum AssociateRqAcPduError {
+    #[error("Transfer syntax result list must be ")]
+    TransferSyntaxInvalidLength,
+    #[error(transparent)]
+    InvalidSyntaxItem(#[from] presentation_context::SyntaxItemError),
+    #[error(transparent)]
+    PresentationContextError(#[from] presentation_context::PresentationContextError),
 }
-
-#[derive(Debug)]
-pub enum Error {
-    InvalidValue,
-}
-
-impl fmt::Display for Error {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Error::InvalidValue => write!(f, "Invalid AssociateItemType value"),
-        }
-    }
-}
-
-impl std::error::Error for Error {}
 
 #[derive(Debug, PartialEq)]
 pub struct AssociateRqAcPdu {
@@ -72,7 +52,7 @@ pub struct AssociateRqAcPdu {
 }
 
 impl AssociateRqAcPdu {
-    pub fn from_response(response: &AcceptedAssociateRequestResponse) -> Result<Self> {
+    pub fn from_response(response: &AcceptedAssociateRequestResponse) -> Result<Self, AssociateRqAcPduError> {
         const NO_VARIABLE_FIELDS_LENGTH: u32 = 68;
         let mut length = NO_VARIABLE_FIELDS_LENGTH;
 
@@ -82,17 +62,6 @@ impl AssociateRqAcPdu {
         let mut presentation_context_items: Vec<PresentationContextItem> = Vec::new();
 
         for context in response.presentation_context_result() {
-            match context.transfer_syntax.len() {
-                1 => {}
-                len => {
-                    error!(
-                        "PresentationContextDefinitionList invalid length: {}, expected 1",
-                        len
-                    );
-                    return Err("Expected one element".into());
-                }
-            }
-
             presentation_context_items.push(
                 PresentationContextItemBuilder::new()
                     .item_type(AssociateItemType::PresentationContextAc)
@@ -101,7 +70,7 @@ impl AssociateRqAcPdu {
                     .add_transfer_syntax(
                         SyntaxItemBuilder::new()
                             .item_type(AssociateItemType::TransferSyntax)
-                            .syntax(context.transfer_syntax[0].clone())
+                            .syntax(context.transfer_syntax.clone())
                             .build()?,
                     )
                     .build()?,
@@ -135,7 +104,7 @@ impl AssociateRqAcPdu {
         })
     }
 
-    pub fn from_indication(indication: &AssociateRequestIndication) -> Result<Self> {
+    pub fn from_indication(indication: &AssociateRequestIndication) -> Result<Self, PduDeserializationError> {
         const NO_VARIABLE_FIELDS_LENGTH: u32 = 68;
         let mut length = NO_VARIABLE_FIELDS_LENGTH;
 
@@ -261,7 +230,7 @@ pub fn serialize_associate_pdu(request: &AssociateRqAcPdu) -> Vec<u8> {
 }
 
 /// Deserializes a A-ASSOCIATE-RQ or A-ASSOCIATE-AC PDU. Takes a reader of u8
-pub fn deserialize_associate_pdu<T: Read>(reader: &mut T) -> Result<AssociateRqAcPdu> {
+pub fn deserialize_associate_pdu<T: Read>(reader: &mut T) -> std::result::Result<AssociateRqAcPdu, PduDeserializationError> {
     let mut reader = BufReader::new(reader);
 
     let mut pdu_type = [0u8; PDU_TYPE_LENGTH];
@@ -297,7 +266,7 @@ pub fn deserialize_associate_pdu<T: Read>(reader: &mut T) -> Result<AssociateRqA
                 .fill_buf()?
                 .first()
                 .copied()
-                .ok_or_else(|| "Invalid item type".to_string())?,
+                .unwrap()
         )?;
 
         match next_type {
@@ -314,10 +283,7 @@ pub fn deserialize_associate_pdu<T: Read>(reader: &mut T) -> Result<AssociateRqA
             AssociateItemType::UserInformation => {
                 user_info_item = Some(deserialize_user_info_item(&mut reader)?);
             }
-
-            _ => {
-                return Err("Invalid item type".into());
-            }
+            _ => {}
         }
     }
 
@@ -374,7 +340,7 @@ fn serialize_application_context_item(item: &ApplicationContextItem) -> Vec<u8> 
     pdu
 }
 
-fn deserialize_application_context_item<T: Read>(reader: &mut T) -> Result<ApplicationContextItem> {
+fn deserialize_application_context_item<T: Read>(reader: &mut T) -> Result<ApplicationContextItem, PduDeserializationError> {
     let mut pdu_type = [0u8; PDU_TYPE_LENGTH];
     reader.read_exact(&mut pdu_type)?;
 

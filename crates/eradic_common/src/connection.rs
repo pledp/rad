@@ -1,8 +1,7 @@
 use std::net::IpAddr;
 
 use crate::{
-    event::{Command, Event},
-    service::{AbortIndication, AssociateRequestIndication},
+    associate::abort::{AbortReason, AbortSource}, event::{Command, Event}, service::{AbortIndication, AssociateRequestIndication, ProviderAbortIndication}
 };
 
 use crate::Result;
@@ -27,11 +26,11 @@ pub enum UpperLayerConnectionState {
 /// depending on performed actions.
 ///
 /// See [DICOM standard part 8](https://dicom.nema.org/medical/dicom/current/output/html/part08).
-#[derive(Clone, Copy)]
+#[derive(Clone)]
 pub struct UpperLayerAcceptorConnection {
     state: UpperLayerConnectionState,
-    called_address: Option<IpAddr>,
-    calling_address: Option<IpAddr>,
+    called_address: Option<String>,
+    calling_address: Option<String>,
 }
 
 // TODO: Remove new_client, create UpperLayerRequestorConnection, remove Option<>
@@ -48,70 +47,29 @@ impl UpperLayerAcceptorConnection {
         }
     }
 
-    pub fn new_server(called_address: IpAddr, calling_address: IpAddr) -> Self {
+    pub fn new_server(
+        called_address: IpAddr,
+        called_port: u16,
+        calling_address: IpAddr,
+        calling_port: u16
+    ) -> Self {
         Self {
             state: UpperLayerConnectionState::WaitingForRequestPdu,
-            called_address: Some(called_address),
-            calling_address: Some(calling_address),
+            called_address: Some(format_presentation_address(called_address, called_port)),
+            calling_address: Some(format_presentation_address(calling_address, calling_port)),
         }
-    }
-
-    pub fn waiting_for_response_primitive(&mut self) {
-        self.state = UpperLayerConnectionState::WaitingForRequestPdu;
-    }
-
-    pub fn handle_event(&mut self, event: Event) -> Result<Option<Command>> {
-        let command = match event {
-            Event::TransportConnectionIndication => {
-                self.waiting_for_response_primitive();
-                None
-            }
-
-            Event::AssociateRequestPdu(pdu) => {
-                self.state = UpperLayerConnectionState::WaitingForResponsePrimitive;
-
-                let indication = AssociateRequestIndication::from_rq_pdu(
-                    pdu,
-                    &self.called_address.unwrap(),
-                    &self.calling_address.unwrap(),
-                );
-
-                Some(Command::AssociateIndication(indication))
-            }
-            Event::AssociateResponsePrimitiveAccept(prim) => {
-                self.state = UpperLayerConnectionState::DataTransfer;
-
-                Some(Command::AssociateAcceptPdu(prim))
-            }
-            Event::AssociateRequestPrimitive(indication) => {
-                self.state = UpperLayerConnectionState::WaitingForOpenConnection;
-
-                Some(Command::OpenConnection)
-            }
-            Event::ConnectionOpen => {
-                self.state = UpperLayerConnectionState::WaitingForAcRjPdu;
-
-                Some(Command::AssociateRequestPdu)
-            }
-
-            _ => {
-                todo!()
-            }
-        };
-
-        Ok(command)
     }
 }
 
 pub fn handle_server_event(
-    conn: &UpperLayerAcceptorConnection,
+    conn: UpperLayerAcceptorConnection,
     event: Event,
 ) -> Result<(Option<Command>, UpperLayerAcceptorConnection)> {
-    let mut new_state = *conn;
+    let mut new_state = conn;
 
     let command = match event {
         Event::TransportConnectionIndication => {
-            new_state.waiting_for_response_primitive();
+            new_state.state = UpperLayerConnectionState::WaitingForRequestPdu;
             None
         }
 
@@ -120,8 +78,8 @@ pub fn handle_server_event(
 
             let indication = AssociateRequestIndication::from_rq_pdu(
                 pdu,
-                &new_state.called_address.unwrap(),
-                &new_state.calling_address.unwrap(),
+                new_state.called_address.clone().unwrap(),
+                new_state.calling_address.clone().unwrap(),
             );
 
             Some(Command::AssociateIndication(indication))
@@ -137,6 +95,35 @@ pub fn handle_server_event(
             new_state.state = UpperLayerConnectionState::Idle;
 
             Some(Command::AbortIndication(AbortIndication::from_pdu(pdu)))
+        }
+
+        Event::TransportConnectionClosedIndication => {
+            new_state.state = UpperLayerConnectionState::Idle;
+
+            Some(Command::ProviderAbortIndication(ProviderAbortIndication::new(
+                AbortReason::NoReason
+            )))
+        }
+
+        _ => {
+            todo!()
+        }
+    };
+
+    Ok((command, new_state))
+}
+
+pub fn handle_client_event(
+    conn: UpperLayerRequestorConnection,
+    event: Event,
+) -> Result<(Option<Command>, UpperLayerRequestorConnection)> {
+    let mut new_state = conn;
+
+    let command = match event {
+        Event::ConnectionOpen => {
+            new_state.state = UpperLayerConnectionState::WaitingForAcRjPdu;
+
+            Some(Command::AssociateRequestPdu)
         }
 
         _ => {
@@ -158,26 +145,13 @@ pub struct UpperLayerRequestorConnection {
 
 impl UpperLayerRequestorConnection {
     pub fn new_client() -> Self {
-        Self::new_no_assoc()
-    }
-
-    pub fn new_no_assoc() -> Self {
         Self {
-            state: UpperLayerConnectionState::Idle,
+            state: UpperLayerConnectionState::WaitingForOpenConnection,
         }
     }
 
-    pub fn handle_event(&mut self, event: Event) -> Result<Option<Command>> {
-        let command = match event {
-            // TODO: ConnectionOpen event with Request?
-            Event::ConnectionOpen => {
-                self.state = UpperLayerConnectionState::WaitingForAcRjPdu;
+}
 
-                Some(Command::AssociateRequestPdu)
-            }
-            _ => todo!(),
-        };
-
-        Ok(command)
-    }
+pub fn format_presentation_address(called_address: IpAddr, called_port: u16) -> String {
+    format!("dicom:{}:{}", called_address, called_port)
 }
