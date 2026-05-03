@@ -6,7 +6,7 @@ use crate::{
 
 use crate::Result;
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, PartialEq)]
 pub enum UpperLayerConnectionState {
     /// Sta1
     Idle,
@@ -61,19 +61,22 @@ impl UpperLayerAcceptorConnection {
     }
 }
 
+/// DICOM state machine command dispatched given an [`Event`].
+///
+/// See [DICOM standard part 8 chapter 9.2](https://dicom.nema.org/medical/dicom/current/output/html/part08.html#chapter_8)
 pub fn handle_server_event(
     conn: UpperLayerAcceptorConnection,
     event: Event,
 ) -> Result<(Option<Command>, UpperLayerAcceptorConnection)> {
     let mut new_state = conn;
 
-    let command = match event {
-        Event::TransportConnectionIndication => {
+    let command = match (event, new_state.state) {
+        (Event::TransportConnectionIndication, _) => {
             new_state.state = UpperLayerConnectionState::WaitingForRequestPdu;
             None
         }
 
-        Event::AssociateRequestPdu(pdu) => {
+       (Event::AssociateRequestPdu(pdu), _) => {
             new_state.state = UpperLayerConnectionState::WaitingForResponsePrimitive;
 
             let indication = AssociateRequestIndication::from_rq_pdu(
@@ -85,19 +88,21 @@ pub fn handle_server_event(
             Some(Command::AssociateIndication(indication))
         }
 
-        Event::AssociateResponsePrimitiveAccept(prim) => {
+        (Event::AssociateResponsePrimitiveAccept(prim), _) => {
             new_state.state = UpperLayerConnectionState::DataTransfer;
 
             Some(Command::AssociateAcceptPdu(prim))
         }
 
-        Event::AssociateAbortPdu(pdu) => {
+        (Event::AssociateAbortPdu(pdu), _) => {
             new_state.state = UpperLayerConnectionState::Idle;
 
             Some(Command::AbortIndication(AbortIndication::from_pdu(pdu)))
         }
 
-        Event::TransportConnectionClosedIndication => {
+        (Event::TransportConnectionClosedIndication, state)
+            if state != UpperLayerConnectionState::Idle =>
+        {
             new_state.state = UpperLayerConnectionState::Idle;
 
             Some(Command::ProviderAbortIndication(ProviderAbortIndication::new(
@@ -106,7 +111,7 @@ pub fn handle_server_event(
         }
 
         _ => {
-            todo!()
+            None
         }
     };
 

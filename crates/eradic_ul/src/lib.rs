@@ -15,6 +15,7 @@ use tokio::{
     io::{AsyncRead, AsyncReadExt, AsyncWriteExt},
     net::{TcpListener, TcpStream},
     sync::{mpsc},
+    task::JoinSet
 };
 use tokio_util::sync::CancellationToken;
 
@@ -37,7 +38,7 @@ pub enum ServiceUserError {
 }
 
 #[derive(Debug, Error)]
-pub enum ReadError {
+pub enum IoError {
     #[error(transparent)]
     Io(#[from] std::io::Error),
     #[error(transparent)]
@@ -48,6 +49,12 @@ pub enum ReadError {
 pub enum HandleClientError {
     #[error(transparent)]
     Io(#[from] std::io::Error),
+}
+
+#[derive(Debug, Error)]
+pub enum TaskError {
+    #[error(transparent)]
+    ReadError(#[from] IoError),
 }
 
 pub async fn handle_client<F, Fut>(tcp: TcpStream, socket_addr: SocketAddr, scu_handler: F) -> Result<(), HandleClientError>
@@ -70,16 +77,11 @@ where
 
     let (mut reader, writer) = tcp.into_split();
 
-    let called_address = writer.local_addr()?.ip();
-    let called_port = writer.local_addr()?.port();
-
     let (command_tx, command_rx) = mpsc::channel::<Command>(32);
     let (event_tx, event_rx) = mpsc::channel::<Event>(32);
     let (user_tx, mut user_rx) = mpsc::channel::<Indication>(32);
 
-    let cancel = CancellationToken::new();
-    let child = cancel.child_token();
-    let child_2 = cancel.child_token();
+    let mut set: JoinSet<Result<(), TaskError>> = JoinSet::new();
 
     let event_tx_user = event_tx.clone();
 
@@ -89,7 +91,7 @@ where
         "UL SCU connection task",
     );
 
-    let user_task = tokio::spawn(
+    set.spawn(
         async move {
             while let Some(indication) = user_rx.recv().await {
                 info!(
@@ -103,6 +105,7 @@ where
             }
 
             info!("All writers out of scope, exiting task");
+            Ok(())
         }
         .instrument(user_span)
     );
@@ -112,7 +115,7 @@ where
         Level::INFO,
         "UL SCU event task",
     );
-    let event_task = tokio::spawn(
+    set.spawn(
         handle_event_task(
             event_rx,
             command_tx.clone(),
@@ -120,7 +123,6 @@ where
             writer.local_addr()?.port(),
             socket_addr.ip(),
             socket_addr.port(),
-            child,
         )
         .instrument(event_span),
     );
@@ -130,8 +132,8 @@ where
         Level::INFO,
         "UL SCU command task",
     );
-    let command_task = tokio::spawn(
-        handle_command_task(writer, command_rx, user_tx, cancel)
+    set.spawn(
+        handle_command_task(writer, command_rx, user_tx)
             .instrument(command_span),
     );
 
@@ -143,35 +145,40 @@ where
     );
 
     // TODO: Move to other functions, too nested
-    let read_task: tokio::task::JoinHandle<Result<(), ReadError>> = tokio::spawn(async move {
-        tokio::select! {
-            _ = child_2.cancelled() => {
-                return Ok(())
-            }
-            result = async {
-                loop {
-                    let (buf, pdu_type) = read_full_pdu(&mut reader).await?;
-                    info!("PDU received: {:?}", pdu_type);
-
-                    event_tx.send(
-                        event_from_deserialized_pdu(
-                            deserialized_pdu_from_reader(&mut Cursor::new(buf), pdu_type)?
-                        )
-                    ).await;
+    set.spawn(async move {
+        loop {
+            let (buf, pdu_type) = match read_full_pdu(&mut reader).await {
+                Ok(val) => val,
+                Err(e) => {
+                    event_tx.send(Event::TransportConnectionClosedIndication).await;
+                    return Err(TaskError::from(e))
                 }
-            } => {
-                warn!("Task exited unexpectedly: {:?}", result);
+            };
 
-                event_tx.send(
-                    Event::TransportConnectionClosedIndication
-                ).await;
+            info!("PDU received: {:?}", pdu_type);
 
-                result
-            }
+            event_tx.send(
+                event_from_deserialized_pdu(
+                    deserialized_pdu_from_reader(&mut Cursor::new(buf), pdu_type)
+                        .map_err(|e| IoError::from(e))?
+                )
+            ).await;
         }
     }.instrument(read_span));
 
-    tokio::join!(command_task, event_task, user_task, read_task);
+    // End all tasks when one task ends.
+    // There is only one "correct" way to end the association,
+    // If `Event::TransportConnectionClosedIndication` occurs first, it requires special handling
+    if let Some(result) = set.join_next().await {
+        match result {
+            Ok(Err(e)) => {
+                warn!("Task exited unexpectedly: {:?}", e);
+            }
+            _ => {}
+        }
+
+        set.join_all().await;
+    }
 
     info!(
         "Closing connection: {}:{}",
@@ -189,97 +196,73 @@ async fn handle_event_task(
     called_port: u16,
     calling: IpAddr,
     calling_port: u16,
-    cancel: CancellationToken,
-) {
+) -> Result<(), TaskError> {
     let mut conn = UpperLayerAcceptorConnection::new_server(called, called_port, calling, calling_port);
 
-    tokio::select! {
-        _ = cancel.cancelled() => {
-            info!("Cancelled");
+    while let Some(event) = event_rx.recv().await {
+        info!("Event received");
+
+        let (command, new_state) = handle_server_event(
+            conn,
+            event,
+        )
+        .unwrap();
+
+        conn = new_state;
+
+        if let Some(cmd) = command {
+            command_tx.send(cmd).await;
         }
-        _ = async {
-            while let Some(event) = event_rx.recv().await {
-                info!("Event received");
+    };
 
-                let (command, new_state) = handle_server_event(
-                    conn,
-                    event,
-                )
-                .unwrap();
-
-                conn = new_state;
-
-                if let Some(cmd) = command {
-                    command_tx.send(cmd).await;
-                }
-            }
-        } => {}
-    }
+    info!("Exiting");
+    Ok(())
 }
 
 async fn handle_command_task<W>(
     mut writer: W,
     mut rx: mpsc::Receiver<Command>,
     user_connection: mpsc::Sender<Indication>,
-    cancel: CancellationToken,
-)
+) -> Result<(), TaskError>
 where
     W: AsyncWrite + Unpin,
 {
-    tokio::select! {
-        _ = cancel.cancelled() => {
-            info!("Cancelled");
-        }
-        _ = async {
-            while let Some(command) = rx.recv().await {
-                handle_command(&mut writer, command, user_connection.clone(), cancel.clone()).await;
+    while let Some(command) = rx.recv().await {
+        match command {
+            Command::AssociateAcceptPdu(resp) => {
+                handle_Associate_response(AssociateRequestResponse::Accepted(resp), &mut writer).await;
             }
-        } => {}
+
+            Command::AssociateIndication(indication) => {
+                user_connection
+                    .send(Indication::AssociateIndication(indication))
+                    .await;
+            }
+
+            Command::AbortIndication(indication) => {
+                user_connection
+                    .send(Indication::AbortIndication(indication))
+                    .await;
+
+                return Ok(())
+            }
+
+            Command::ProviderAbortIndication(indication) => {
+                user_connection
+                    .send(Indication::ProviderAbortIndication(indication))
+                    .await;
+
+                return Ok(())
+            }
+
+            _ => todo!(),
+        };
     }
+
+    Ok(())
 }
 
-async fn handle_command<W>(
-    writer: &mut W,
-    command: Command,
-    user_connection: mpsc::Sender<Indication>,
-    cancel: CancellationToken,
-)
-where
-    W: AsyncWrite + Unpin,
-{
-    info!("Command received");
-    match command {
-        Command::AssociateAcceptPdu(resp) => {
-            handle_Associate_response(AssociateRequestResponse::Accepted(resp), writer).await;
-        }
-
-        Command::AssociateIndication(indication) => {
-            user_connection
-                .send(Indication::AssociateIndication(indication))
-                .await;
-        }
-
-        Command::AbortIndication(indication) => {
-            user_connection
-                .send(Indication::AbortIndication(indication))
-                .await;
-
-            cancel.cancel();
-        }
-
-        Command::ProviderAbortIndication(indication) => {
-            user_connection
-                .send(Indication::ProviderAbortIndication(indication))
-                .await;
-
-            cancel.cancel();
-        }
-
-        _ => todo!(),
-    };
-}
-
-async fn read_full_pdu<R>(reader: &mut R) -> Result<(Vec<u8>, PduType), ReadError>
+async fn read_full_pdu<R>(reader: &mut R) -> Result<(Vec<u8>, PduType), IoError>
 where
     R: AsyncRead + Unpin,
 {
