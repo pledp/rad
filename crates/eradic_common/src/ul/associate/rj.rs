@@ -1,4 +1,4 @@
-use crate::{associate::RejectedAssociateResult, pdu::PduType};
+use crate::{ul::associate::RejectedAssociateResult, ul::pdu::PduType};
 
 pub enum RejectSource {
     ServiceUser,

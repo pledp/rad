@@ -3,8 +3,8 @@ use std::io::Read;
 
 use thiserror::Error;
 
-use crate::associate::{AssociateRqAcPdu, PduDeserializationError};
-use crate::associate::abort::AssociateAbortPdu;
+use crate::ul::associate::{AssociateRqAcPdu, PduDeserializationError};
+use crate::ul::associate::abort::AssociateAbortPdu;
 
 /// The length of the PDU-type field in the PDU. The Item Type field is the same in A-Associate PDU's.
 pub(crate) const PDU_TYPE_LENGTH: usize = 1;

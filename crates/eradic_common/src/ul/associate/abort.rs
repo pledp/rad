@@ -2,7 +2,8 @@ use std::io::Read;
 
 use thiserror::Error;
 
-use crate::{associate::PduDeserializationError, pdu::{PDU_HEADER_LENGTH, PDU_LENGTH_LENGTH, PDU_TYPE_LENGTH, PduType, read_padding, vec8_add_padding}};
+use crate::{pdu::{PDU_HEADER_LENGTH, PDU_LENGTH_LENGTH, PDU_TYPE_LENGTH, PduType, read_padding, vec8_add_padding}};
+use crate::ul::associate::PduDeserializationError;
 
 #[derive(Debug, Error)]
 pub enum AbortParseError {
@@ -156,7 +157,7 @@ pub fn deserialize_abort_pdu<T: Read>(
 mod tests {
     use std::io::Cursor;
 
-    use crate::{associate::{PduDeserializationError, abort::{AbortParseError, AbortReason, AbortSource, deserialize_abort_pdu}}, pdu::PduType};
+    use crate::{ul::associate::{PduDeserializationError, abort::{AbortParseError, AbortReason, AbortSource, deserialize_abort_pdu}}, pdu::PduType};
 
     #[test]
     fn test_deserialize_abort_pdu_ok() {

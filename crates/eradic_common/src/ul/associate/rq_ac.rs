@@ -6,14 +6,14 @@ use thiserror::Error;
 
 use log::error;
 
-use crate::associate::{PduDeserializationError, presentation_context};
-use crate::associate::presentation_context::{
+use crate::ul::associate::{PduDeserializationError, presentation_context};
+use crate::ul::associate::presentation_context::{
     SyntaxItemBuilder, deserialize_presentation_context_item, serialize_presentation_context_item,
 };
-use crate::associate::user_information::{
+use crate::ul::associate::user_information::{
     UserInfoItem, UserInformationSubItem, deserialize_user_info_item, serialize_user_info_item,
 };
-use crate::associate::{
+use crate::ul::associate::{
     AssociateItemType, ITEM_LENGTH_LENGTH, next_byte_item_type,
     presentation_context::{PresentationContextItem, PresentationContextItemBuilder},
 };

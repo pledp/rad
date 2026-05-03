@@ -1,13 +1,13 @@
 use std::path::{Path};
 
 use eradic::ul::connection::{UpperLayerRequestorConnection, format_presentation_address, handle_client_event};
-use eradic::associate::abort::{AssociateAbortPdu, serialize_abort_pdu};
+use eradic::ul::associate::abort::{AssociateAbortPdu, serialize_abort_pdu};
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt, BufWriter},
     net::TcpStream,
 };
 
-use eradic_common::associate::{
+use eradic::ul::associate::{
     AssociateRqAcPdu, MaximumLength, UserInformation, serialize_associate_pdu,
 };
 use eradic::ul::event::Event;
@@ -59,8 +59,8 @@ async fn main() -> Result<()> {
 async fn send_rq(tcp: &mut TcpStream, pdu: AssociateRqAcPdu) -> Result<()> {
     let mut writer = BufWriter::new(tcp);
     let abort = AssociateAbortPdu::new(
-        eradic_common::associate::abort::AbortSource::ServiceProvider,
-        eradic_common::associate::abort::AbortReason::NoReason,
+        eradic::ul::associate::abort::AbortSource::ServiceProvider,
+        eradic::ul::associate::abort::AbortReason::NoReason,
     );
 
     writer

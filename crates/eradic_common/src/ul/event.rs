@@ -3,7 +3,7 @@ use strum_macros::{IntoStaticStr, Display};
 use thiserror::Error;
 
 use crate::{
-    DeserializedPdu, associate::{AssociateRqAcPdu, abort::AssociateAbortPdu}, ul::service::{
+    DeserializedPdu, ul::associate::{AssociateRqAcPdu, abort::AssociateAbortPdu}, ul::service::{
         AbortIndication, AcceptedAssociateRequestResponse, AssociateRequestIndication, ProviderAbortIndication, RejectedAssociateRequestResponse
     }
 };

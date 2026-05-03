@@ -3,7 +3,7 @@ use std::sync::{Arc, Mutex};
 
 use eradic::ul::service::PresentationContextDefinitionResult;
 use eradic::{
-    associate::{
+    ul::associate::{
         presentation_context::PresentationContextResult,
     },
     ul::event::Event,

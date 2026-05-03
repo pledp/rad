@@ -2,11 +2,11 @@ use std::net::IpAddr;
 
 use thiserror::Error;
 
-use crate::associate::RejectedAssociateResult;
-use crate::associate::abort::{AbortReason, AbortSource, AssociateAbortPdu};
-use crate::associate::presentation_context::PresentationContextResult;
-use crate::associate::rj::ServiceUserReason;
-use crate::associate::{
+use crate::ul::associate::RejectedAssociateResult;
+use crate::ul::associate::abort::{AbortReason, AbortSource, AssociateAbortPdu};
+use crate::ul::associate::presentation_context::PresentationContextResult;
+use crate::ul::associate::rj::ServiceUserReason;
+use crate::ul::associate::{
     AssociateRqAcPdu, UserInformation, presentation_context::PresentationContextItem,
 };
 

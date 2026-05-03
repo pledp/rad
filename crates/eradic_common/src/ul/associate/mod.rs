@@ -12,7 +12,7 @@ use thiserror::Error;
 pub use rq_ac::*;
 pub use user_information::*;
 
-use crate::{DeserializedPdu, associate::abort::deserialize_abort_pdu, pdu::PduType};
+use crate::{DeserializedPdu, ul::associate::abort::deserialize_abort_pdu, pdu::PduType};
 
 /// Length of the Item length field.
 const ITEM_LENGTH_LENGTH: usize = 2;

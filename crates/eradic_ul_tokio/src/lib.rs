@@ -20,12 +20,12 @@ use tokio::{
 use tracing::{Instrument, Level, info, span};
 use tracing_log::log::{error, warn};
 
-use eradic_common::associate::{
+use eradic_common::ul::associate::{
     AssociateRqAcPdu, PduDeserializationError, deserialized_pdu_from_reader, serialize_associate_pdu
 };
 use eradic_common::ul::connection::{UpperLayerAcceptorConnection, handle_server_event};
 use eradic_common::ul::event::{Command, Event, Indication, event_from_deserialized_pdu};
-use eradic_common::pdu::{PDU_HEADER_LENGTH, PduType, read_pdu_header};
+use eradic_common::ul::pdu::{PDU_HEADER_LENGTH, PduType, read_pdu_header};
 use eradic_common::ul::service::AssociateRequestResponse;
 
 #[derive(Debug, Error)]

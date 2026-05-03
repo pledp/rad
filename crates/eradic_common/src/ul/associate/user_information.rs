@@ -1,8 +1,8 @@
 use std::io::{BufRead, BufReader, Read};
 
-use crate::associate::AssociateItemType;
-use crate::associate::ITEM_LENGTH_LENGTH;
-use crate::associate::PduDeserializationError;
+use crate::ul::associate::AssociateItemType;
+use crate::ul::associate::ITEM_LENGTH_LENGTH;
+use crate::ul::associate::PduDeserializationError;
 use crate::pdu::{PDU_TYPE_LENGTH, read_padding, vec8_add_padding};
 
 #[derive(Clone, Copy, Debug, PartialEq)]

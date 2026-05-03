@@ -1,9 +1,9 @@
 use crate::{
-    associate::{
+    ul::associate::{
         ApplicationContextItem, AssociateItemType, AssociateRqAcPdu, AssociateRqAcPduError, PduDeserializationError, UserInfoItem, UserInformationSubItem, presentation_context::{
             PresentationContextItemBuilder, SyntaxItemBuilder
         }
-    }, pdu::PduType, ul::service::AcceptedAssociateRequestResponse
+    }, ul::pdu::PduType, ul::service::AcceptedAssociateRequestResponse
 };
 use crate::ul::service::{AssociateRequestResponse, AssociateRequestIndication};
 

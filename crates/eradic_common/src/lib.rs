@@ -1,5 +1,3 @@
-pub mod associate;
-pub mod pdu;
 pub mod vr;
 pub mod ul;
 
@@ -10,6 +8,7 @@ use std::fs::File;
 use std::io::{BufReader, Read};
 use std::path::Path;
 
+use crate::ul::pdu;
 use crate::vr::ValueRepresentation;
 
 pub type Result<T> = std::result::Result<T, Error>;

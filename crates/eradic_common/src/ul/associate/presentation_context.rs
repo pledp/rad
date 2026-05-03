@@ -3,8 +3,8 @@ use std::result::Result;
 
 use thiserror::Error;
 
-use crate::associate::PduDeserializationError;
-use crate::associate::{
+use crate::ul::associate::PduDeserializationError;
+use crate::ul::associate::{
     AssociateItemType, CONTEXT_ID_LENGTH, ITEM_LENGTH_LENGTH, RESULT_LENGTH, next_byte_item_type,
 };
 use crate::pdu::{PDU_TYPE_LENGTH, read_padding, vec8_add_padding};
