@@ -12,7 +12,7 @@ use thiserror::Error;
 pub use rq_ac::*;
 pub use user_information::*;
 
-use crate::{DeserializedPdu, associate::abort::deserialize_abort_pdu, event::Event, pdu::PduType};
+use crate::{DeserializedPdu, associate::abort::deserialize_abort_pdu, pdu::PduType};
 
 /// Length of the Item length field.
 const ITEM_LENGTH_LENGTH: usize = 2;
@@ -117,12 +117,4 @@ where
         }
         _ => todo!(),
     })
-}
-
-pub fn event_from_deserialized_pdu(pdu: DeserializedPdu) -> Event {
-    match pdu {
-        DeserializedPdu::AssociateRequest(inner) => Event::AssociateRequestPdu(inner),
-        DeserializedPdu::Abort(inner) => Event::AssociateAbortPdu(inner),
-        _ => todo!()
-    }
 }

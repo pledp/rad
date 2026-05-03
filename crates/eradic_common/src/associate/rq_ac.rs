@@ -18,7 +18,6 @@ use crate::associate::{
     presentation_context::{PresentationContextItem, PresentationContextItemBuilder},
 };
 use crate::pdu::{PDU_LENGTH_LENGTH, PDU_TYPE_LENGTH, PduType, read_padding, vec8_add_padding};
-use crate::service::{AcceptedAssociateRequestResponse, AssociateRequestIndication};
 
 /// Length of the Protocol Version field in a A-ASSOCIATE-RQ or A-ASSOCIATE-AC PDU
 const PROTOCOL_VERSION_LENGTH: usize = 2;
@@ -44,124 +43,14 @@ pub struct AssociateRqAcPdu {
     pub pdu_type: PduType,
     pub length: u32,
     pub protocol_version: u16,
-    called_ae: String,
-    calling_ae: String,
+    pub(crate) called_ae: String,
+    pub(crate) calling_ae: String,
     pub application_context_item: ApplicationContextItem,
     pub presentation_context_items: Vec<PresentationContextItem>,
-    user_info_item: UserInfoItem,
+    pub(crate) user_info_item: UserInfoItem,
 }
 
 impl AssociateRqAcPdu {
-    pub fn from_response(response: &AcceptedAssociateRequestResponse) -> Result<Self, AssociateRqAcPduError> {
-        const NO_VARIABLE_FIELDS_LENGTH: u32 = 68;
-        let mut length = NO_VARIABLE_FIELDS_LENGTH;
-
-        let application_context_item = ApplicationContextItem::new(&response.context_name);
-        length += application_context_item.item_length();
-
-        let mut presentation_context_items: Vec<PresentationContextItem> = Vec::new();
-
-        for context in response.presentation_context_result() {
-            presentation_context_items.push(
-                PresentationContextItemBuilder::new()
-                    .item_type(AssociateItemType::PresentationContextAc)
-                    .context_id(context.context_id)
-                    .result(context.result)
-                    .add_transfer_syntax(
-                        SyntaxItemBuilder::new()
-                            .item_type(AssociateItemType::TransferSyntax)
-                            .syntax(context.transfer_syntax.clone())
-                            .build()?,
-                    )
-                    .build()?,
-            );
-        }
-
-        length += presentation_context_items
-            .iter()
-            .map(|item| item.item_length())
-            .sum::<u32>();
-
-        let mut user_info_sub_items = Vec::new();
-
-        for user_info in response.user_information() {
-            user_info_sub_items.push(UserInformationSubItem::new(*user_info));
-        }
-
-        let user_info_item = UserInfoItem::new(user_info_sub_items);
-
-        length += user_info_item.item_length();
-
-        Ok(Self {
-            pdu_type: PduType::AssociateAccept,
-            length,
-            protocol_version: 1,
-            called_ae: response.called_ae.clone(),
-            calling_ae: response.calling_ae.clone(),
-            application_context_item,
-            presentation_context_items,
-            user_info_item,
-        })
-    }
-
-    pub fn from_indication(indication: &AssociateRequestIndication) -> Result<Self, PduDeserializationError> {
-        const NO_VARIABLE_FIELDS_LENGTH: u32 = 68;
-        let mut length = NO_VARIABLE_FIELDS_LENGTH;
-
-        let application_context_item = ApplicationContextItem::new(&indication.context_name);
-        length += application_context_item.item_length();
-
-        let mut presentation_context_items: Vec<PresentationContextItem> = Vec::new();
-
-        for context in indication.presentation_context() {
-            let mut builder = PresentationContextItemBuilder::new()
-                .item_type(AssociateItemType::PresentationContextRq)
-                .context_id(context.context_id)
-                .abstract_syntax_item(
-                    SyntaxItemBuilder::new()
-                        .item_type(AssociateItemType::AbstractSyntax)
-                        .syntax(context.abstract_syntax.clone())
-                        .build()?,
-                );
-
-            for transfer in &context.transfer_syntax {
-                builder = builder.add_transfer_syntax(
-                    SyntaxItemBuilder::new()
-                        .item_type(AssociateItemType::TransferSyntax)
-                        .syntax(transfer)
-                        .build()?,
-                );
-            }
-
-            presentation_context_items.push(builder.build()?);
-        }
-
-        length += presentation_context_items
-            .iter()
-            .map(|item| item.item_length())
-            .sum::<u32>();
-
-        let mut user_info_sub_items = Vec::new();
-
-        for user_info in indication.user_information() {
-            user_info_sub_items.push(UserInformationSubItem::new(*user_info));
-        }
-
-        let user_info_item = UserInfoItem::new(user_info_sub_items);
-        length += user_info_item.item_length();
-
-        Ok(Self {
-            pdu_type: PduType::AssociateRequest,
-            length,
-            protocol_version: 1,
-            called_ae: indication.called_ae.clone(),
-            calling_ae: indication.calling_ae.clone(),
-            application_context_item,
-            presentation_context_items,
-            user_info_item,
-        })
-    }
-
     pub fn pdu_type(&self) -> PduType {
         self.pdu_type
     }

@@ -1,10 +1,7 @@
-use std::net::{IpAddr, Ipv4Addr};
 use std::path::{Path};
-use std::thread::sleep;
-use std::time::Duration;
 
-use eradic::connection::{UpperLayerRequestorConnection, format_presentation_address, handle_client_event};
-use eradic_common::associate::abort::{AssociateAbortPdu, serialize_abort_pdu};
+use eradic::ul::connection::{UpperLayerRequestorConnection, format_presentation_address, handle_client_event};
+use eradic::associate::abort::{AssociateAbortPdu, serialize_abort_pdu};
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt, BufWriter},
     net::TcpStream,
@@ -13,13 +10,11 @@ use tokio::{
 use eradic_common::associate::{
     AssociateRqAcPdu, MaximumLength, UserInformation, serialize_associate_pdu,
 };
-use eradic_common::event::Event;
-use eradic_common::open_file;
-use eradic_common::service::{
+use eradic::ul::event::Event;
+use eradic::open_file;
+use eradic::ul::service::{
     AssociateRequestIndication, PresentationContextDefinitionListBuilder,
 };
-
-use eradic_common::connection::UpperLayerAcceptorConnection;
 
 pub type Result<T> = std::result::Result<T, Error>;
 pub type Error = Box<dyn std::error::Error + Send + Sync>;
@@ -54,7 +49,7 @@ async fn main() -> Result<()> {
 
     let (conn, command) = handle_client_event(conn, Event::ConnectionOpen)?;
 
-    let pdu = AssociateRqAcPdu::from_indication(&indication)?;
+    let pdu = AssociateRqAcPdu::try_from(indication)?;
 
     send_rq(&mut stream, pdu).await;
 

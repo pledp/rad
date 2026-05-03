@@ -1,13 +1,13 @@
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
-use eradic::service::PresentationContextDefinitionResult;
-use eradic_common::{
+use eradic::ul::service::PresentationContextDefinitionResult;
+use eradic::{
     associate::{
         presentation_context::PresentationContextResult,
     },
-    event::Event,
-    service::{
+    ul::event::Event,
+    ul::service::{
         AcceptedAssociateRequestResponse, AssociateRequestIndication,
     },
 };

@@ -16,8 +16,8 @@ use tokio::{
 use tracing::{Level, info};
 use tracing_subscriber::{FmtSubscriber, fmt};
 
-use eradic_common::event::{Indication};
-use eradic_ul::handle_client;
+use eradic::ul::event::{Indication};
+use eradic_ul_tokio::handle_client;
 
 use crate::service_user::LocalUpperLayerServiceUser;
 

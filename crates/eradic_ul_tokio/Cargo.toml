@@ -1,5 +1,5 @@
 [package]
-name = "eradic_ul"
+name = "eradic_ul_tokio"
 version = "0.1.0"
 edition = "2024"
 

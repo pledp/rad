@@ -300,7 +300,7 @@ impl AbortIndication {
 
 #[cfg(test)]
 mod tests {
-    use crate::service::{
+    use crate::ul::service::{
         PresentationContextDefinitionListBuilder,
         PresentationContextDefinitionListBuilderError
     };

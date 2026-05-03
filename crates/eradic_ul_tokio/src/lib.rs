@@ -10,26 +10,23 @@ use std::sync::{
 use thiserror::Error;
 
 use tokio::io::AsyncWrite;
-use tokio::time::{self, Sleep};
 use tokio::{
     io::{AsyncRead, AsyncReadExt, AsyncWriteExt},
-    net::{TcpListener, TcpStream},
+    net::{TcpStream},
     sync::{mpsc},
     task::JoinSet
 };
-use tokio_util::sync::CancellationToken;
 
 use tracing::{Instrument, Level, info, span};
 use tracing_log::log::{error, warn};
-use tracing_subscriber::{FmtSubscriber, fmt};
 
 use eradic_common::associate::{
-    AssociateRqAcPdu, PduDeserializationError, deserialized_pdu_from_reader, event_from_deserialized_pdu, serialize_associate_pdu
+    AssociateRqAcPdu, PduDeserializationError, deserialized_pdu_from_reader, serialize_associate_pdu
 };
-use eradic_common::connection::{UpperLayerAcceptorConnection, handle_server_event};
-use eradic_common::event::{Command, Event, Indication};
+use eradic_common::ul::connection::{UpperLayerAcceptorConnection, handle_server_event};
+use eradic_common::ul::event::{Command, Event, Indication, event_from_deserialized_pdu};
 use eradic_common::pdu::{PDU_HEADER_LENGTH, PduType, read_pdu_header};
-use eradic_common::service::AssociateRequestResponse;
+use eradic_common::ul::service::AssociateRequestResponse;
 
 #[derive(Debug, Error)]
 pub enum ServiceUserError {
@@ -292,7 +289,7 @@ where
         AssociateRequestResponse::Accepted(inner) => {
             info!("Sending A-Associate-AC PDU");
 
-            let pdu = AssociateRqAcPdu::from_response(&inner).unwrap();
+            let pdu = AssociateRqAcPdu::try_from(inner).unwrap();
             tcp.write_all(serialize_associate_pdu(&pdu).as_slice())
                 .await;
         }

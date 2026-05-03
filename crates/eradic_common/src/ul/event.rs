@@ -3,10 +3,9 @@ use strum_macros::{IntoStaticStr, Display};
 use thiserror::Error;
 
 use crate::{
-    associate::{AssociateRqAcPdu, abort::AssociateAbortPdu},
-    service::{
+    DeserializedPdu, associate::{AssociateRqAcPdu, abort::AssociateAbortPdu}, ul::service::{
         AbortIndication, AcceptedAssociateRequestResponse, AssociateRequestIndication, ProviderAbortIndication, RejectedAssociateRequestResponse
-    },
+    }
 };
 
 /// DICOM standard events
@@ -65,5 +64,13 @@ impl Indication {
                 Err(IndicationError::InvalidCommand(cmd))
             }
         }
+    }
+}
+
+pub fn event_from_deserialized_pdu(pdu: DeserializedPdu) -> Event {
+    match pdu {
+        DeserializedPdu::AssociateRequest(inner) => Event::AssociateRequestPdu(inner),
+        DeserializedPdu::Abort(inner) => Event::AssociateAbortPdu(inner),
+        _ => todo!()
     }
 }

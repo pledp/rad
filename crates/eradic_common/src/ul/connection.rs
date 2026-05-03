@@ -1,7 +1,7 @@
 use std::net::IpAddr;
 
 use crate::{
-    associate::abort::{AbortReason, AbortSource}, event::{Command, Event}, service::{AbortIndication, AssociateRequestIndication, ProviderAbortIndication}
+    associate::abort::{AbortReason, AbortSource}, ul::event::{Command, Event}, ul::service::{AbortIndication, AssociateRequestIndication, ProviderAbortIndication}
 };
 
 use crate::Result;

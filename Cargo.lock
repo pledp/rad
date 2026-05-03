@@ -25,7 +25,7 @@ name = "eradic"
 version = "0.1.0"
 dependencies = [
  "eradic_common",
- "eradic_ul",
+ "eradic_ul_tokio",
  "tokio",
  "tokio-util",
  "tracing",
@@ -44,7 +44,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "eradic_ul"
+name = "eradic_ul_tokio"
 version = "0.1.0"
 dependencies = [
  "eradic_common",
