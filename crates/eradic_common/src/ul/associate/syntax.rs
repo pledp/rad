@@ -7,6 +7,9 @@ use crate::ul::{
     pdu::{PDU_TYPE_LENGTH, read_padding, vec8_add_padding},
 };
 
+/// Serialize a [SyntaxItem] into [Vec<u8>].
+///
+/// See [DICOM standard part 8](https://dicom.nema.org/medical/dicom/current/output/html/part08.html#chapter_8)
 pub(crate) fn serialize_syntax_item(item: &SyntaxItem) -> Vec<u8> {
     let mut pdu: Vec<u8> = Vec::new();
 
@@ -24,6 +27,8 @@ pub(crate) fn serialize_syntax_item(item: &SyntaxItem) -> Vec<u8> {
 #[doc = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/errors/syntax_deserialize_errors.md"))]
 #[doc = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/errors/deserialize_errors.md"))]
 #[doc = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/errors/item_deserialize_errors.md"))]
+///
+/// See [DICOM standard part 8](https://dicom.nema.org/medical/dicom/current/output/html/part08.html#chapter_8)
 pub(crate) fn deserialize_syntax_item<T: Read>(
     reader: &mut T,
 ) -> Result<SyntaxItem, PduDeserializationError> {
@@ -56,6 +61,9 @@ pub enum SyntaxItemError {
     InvalidItemType,
 }
 
+/// [SyntaxItem] may represent an abstract syntax or a transfer syntax.
+///
+/// See [DICOM standard part 8](https://dicom.nema.org/medical/dicom/current/output/html/part08.html#chapter_8).
 #[derive(Debug, PartialEq)]
 pub struct SyntaxItem {
     pub item_type: AssociateItemType,
@@ -64,12 +72,10 @@ pub struct SyntaxItem {
 }
 
 impl SyntaxItem {
-    /// Creates a SyntaxItem.
-    ///
-    /// [SyntaxItem] may represent an abstract syntax or a transfer syntax.
+    /// Creates a [SyntaxItem].
     ///
     /// # Errors
-    /// [`SyntaxItemError::InvalidItemType`] if `item_type` is not of [`AssociateItemType::AbstractSyntax`] or [`AssociateItemType::TransferSyntax`].
+    /// - [`SyntaxItemError::InvalidItemType`] if `item_type` is not of [AssociateItemType::AbstractSyntax] or [AssociateItemType::TransferSyntax].
     pub fn new(item_type: AssociateItemType, syntax: &str) -> Result<Self, SyntaxItemError> {
         match item_type {
             AssociateItemType::AbstractSyntax | AssociateItemType::TransferSyntax => {}
@@ -137,17 +143,6 @@ mod tests {
     }
 
     #[test]
-    fn test_syntax_item_length() {
-        let mut data = vec![
-            0x40, 0x00, 0x00, 0x11, 0x31, 0x2e, 0x32, 0x2e, 0x38, 0x34, 0x30, 0x2e, 0x31, 0x30,
-            0x30, 0x30, 0x38, 0x2e, 0x31, 0x2e, 0x32,
-        ];
-
-        let item = SyntaxItem::new(AssociateItemType::TransferSyntax, "1.2.840.10008.1.1").unwrap();
-        assert_eq!(item.item_length(), data.len() as u32);
-    }
-
-    #[test]
     fn test_syntax_item_new_err() {
         assert!(matches!(
             SyntaxItem::new(
@@ -160,6 +155,17 @@ mod tests {
             SyntaxItem::new(AssociateItemType::UserInformation, "1.2.840.10008.1.1"),
             Err(SyntaxItemError::InvalidItemType)
         ));
+    }
+
+    #[test]
+    fn test_syntax_item_length() {
+        let mut data = vec![
+            0x40, 0x00, 0x00, 0x11, 0x31, 0x2e, 0x32, 0x2e, 0x38, 0x34, 0x30, 0x2e, 0x31, 0x30,
+            0x30, 0x30, 0x38, 0x2e, 0x31, 0x2e, 0x32,
+        ];
+
+        let item = SyntaxItem::new(AssociateItemType::TransferSyntax, "1.2.840.10008.1.1").unwrap();
+        assert_eq!(item.item_length(), data.len() as u32);
     }
 
     #[test]
