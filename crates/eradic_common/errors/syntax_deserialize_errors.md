@@ -1,0 +1,1 @@
+- [`PduDeserializationError::InvalidEncofing`] if syntax is not valid UTF8.

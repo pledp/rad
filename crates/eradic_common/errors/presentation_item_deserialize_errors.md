@@ -1,0 +1,2 @@
+- [`PduDeserializationError::InvalidPresentationItem`] - see [`PresentationContextError`] for variants.
+- [`PduDeserializationError::InvalidSyntaxItem`] - see [`SyntaxItemError`] for variants.

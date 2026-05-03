@@ -115,8 +115,9 @@ pub fn serialize_abort_pdu(item: &AssociateAbortPdu) -> Vec<u8> {
 /// Deserializes bytes from a [Read] into a [AssociateAbortPdu].
 ///
 /// # Errors
-/// - Returns [PduDeserializationError::InvalidLength] if the reader does not contain enough bytes (4 + Item Length).
-/// - Returns [PduDeserializationError::InvalidItemType] error if item type is not [PduType::Abort].
+/// - [`PduDeserializationError::UnexpectedPduType`] if item type is not [PduType::Abort].
+#[doc = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/errors/deserialize_errors.md"))]
+#[doc = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/errors/pdu_deserialize_errors.md"))]
 pub fn deserialize_abort_pdu<T: Read>(
     reader: &mut T,
 ) -> Result<AssociateAbortPdu, PduDeserializationError> {
@@ -180,7 +181,7 @@ mod tests {
 
         let result = deserialize_abort_pdu(&mut reader);
 
-        assert!(matches!(result, Err(PduDeserializationError::InvalidItemType(0xFF))));
+        assert!(matches!(result, Err(PduDeserializationError::InvalidPduType(0xFF))));
     }
 
     #[test]

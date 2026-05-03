@@ -6,10 +6,11 @@ use thiserror::Error;
 
 use log::error;
 
-use crate::ul::associate::{PduDeserializationError, presentation_context};
+use crate::pdu::{PDU_LENGTH_LENGTH, PDU_TYPE_LENGTH, PduType, read_padding, vec8_add_padding};
 use crate::ul::associate::presentation_context::{
-    SyntaxItemBuilder, deserialize_presentation_context_item, serialize_presentation_context_item,
+    deserialize_presentation_context_item, serialize_presentation_context_item,
 };
+use crate::ul::associate::syntax::{SyntaxItemBuilder, SyntaxItemError};
 use crate::ul::associate::user_information::{
     UserInfoItem, UserInformationSubItem, deserialize_user_info_item, serialize_user_info_item,
 };
@@ -17,7 +18,7 @@ use crate::ul::associate::{
     AssociateItemType, ITEM_LENGTH_LENGTH, next_byte_item_type,
     presentation_context::{PresentationContextItem, PresentationContextItemBuilder},
 };
-use crate::pdu::{PDU_LENGTH_LENGTH, PDU_TYPE_LENGTH, PduType, read_padding, vec8_add_padding};
+use crate::ul::associate::{PduDeserializationError, presentation_context};
 
 /// Length of the Protocol Version field in a A-ASSOCIATE-RQ or A-ASSOCIATE-AC PDU
 const PROTOCOL_VERSION_LENGTH: usize = 2;
@@ -33,7 +34,7 @@ pub enum AssociateRqAcPduError {
     #[error("Transfer syntax result list must be ")]
     TransferSyntaxInvalidLength,
     #[error(transparent)]
-    InvalidSyntaxItem(#[from] presentation_context::SyntaxItemError),
+    InvalidSyntaxItem(#[from] SyntaxItemError),
     #[error(transparent)]
     PresentationContextError(#[from] presentation_context::PresentationContextError),
 }
@@ -118,8 +119,13 @@ pub fn serialize_associate_pdu(request: &AssociateRqAcPdu) -> Vec<u8> {
     pdu
 }
 
-/// Deserializes a A-ASSOCIATE-RQ or A-ASSOCIATE-AC PDU. Takes a reader of u8
-pub fn deserialize_associate_pdu<T: Read>(reader: &mut T) -> std::result::Result<AssociateRqAcPdu, PduDeserializationError> {
+/// Deserializes bytes from a [Read] into a [AssociateAbortPdu].
+///
+/// # Errors
+#[doc = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/errors/pdu_deserialize_errors.md"))]
+pub fn deserialize_associate_pdu<T: Read>(
+    reader: &mut T,
+) -> std::result::Result<AssociateRqAcPdu, PduDeserializationError> {
     let mut reader = BufReader::new(reader);
 
     let mut pdu_type = [0u8; PDU_TYPE_LENGTH];
@@ -150,21 +156,14 @@ pub fn deserialize_associate_pdu<T: Read>(reader: &mut T) -> std::result::Result
     // While reader is not empty, deserialize items.
     // Makes item ordering flexible. Standard does not define that items must be in certain order.
     while !reader.fill_buf()?.is_empty() {
-        let next_type = next_byte_item_type(
-            reader
-                .fill_buf()?
-                .first()
-                .copied()
-                .unwrap()
-        )?;
+        let next_type = next_byte_item_type(reader.fill_buf()?.first().copied().unwrap())?;
 
         match next_type {
             AssociateItemType::ApplicationContext => {
                 application_context_item = Some(deserialize_application_context_item(&mut reader)?);
             }
 
-            AssociateItemType::PresentationContextAc
-            | AssociateItemType::PresentationContextRq => {
+            AssociateItemType::PresentationContextAc | AssociateItemType::PresentationContextRq => {
                 presentation_context_items
                     .push(deserialize_presentation_context_item(&mut reader)?);
             }
@@ -229,7 +228,9 @@ fn serialize_application_context_item(item: &ApplicationContextItem) -> Vec<u8> 
     pdu
 }
 
-fn deserialize_application_context_item<T: Read>(reader: &mut T) -> Result<ApplicationContextItem, PduDeserializationError> {
+fn deserialize_application_context_item<T: Read>(
+    reader: &mut T,
+) -> Result<ApplicationContextItem, PduDeserializationError> {
     let mut pdu_type = [0u8; PDU_TYPE_LENGTH];
     reader.read_exact(&mut pdu_type)?;
 

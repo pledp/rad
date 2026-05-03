@@ -1,0 +1,1 @@
+- [`PduDeserializationError::InvalidItemType`] if the item type is not recognized.

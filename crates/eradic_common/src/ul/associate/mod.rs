@@ -2,6 +2,7 @@ pub mod abort;
 pub mod presentation_context;
 pub mod rj;
 mod rq_ac;
+pub mod syntax;
 mod user_information;
 
 use std::io::Read;
@@ -12,7 +13,14 @@ use thiserror::Error;
 pub use rq_ac::*;
 pub use user_information::*;
 
-use crate::{DeserializedPdu, ul::associate::abort::deserialize_abort_pdu, pdu::PduType};
+use crate::{
+    DeserializedPdu,
+    pdu::PduType,
+    ul::associate::{
+        abort::deserialize_abort_pdu, presentation_context::PresentationContextError,
+        syntax::SyntaxItemError,
+    },
+};
 
 /// Length of the Item length field.
 const ITEM_LENGTH_LENGTH: usize = 2;
@@ -82,9 +90,9 @@ pub enum PduDeserializationError {
     #[error("Item type does not exist: {0}")]
     InvalidItemType(u8),
     #[error(transparent)]
-    InvalidSyntaxItem(#[from] presentation_context::SyntaxItemError),
+    InvalidSyntaxItem(#[from] SyntaxItemError),
     #[error(transparent)]
-    InvalidPresentationItem(#[from] presentation_context::PresentationContextError),
+    InvalidPresentationItem(#[from] PresentationContextError),
 
     #[error(transparent)]
     InvalidLength(#[from] std::io::Error),
@@ -97,24 +105,20 @@ pub enum PduDeserializationError {
     InvalidPduType(u8),
     #[error("Unexpected PDU type: {0:?}")]
     UnexpectedPduType(PduType),
-
 }
 
-pub fn deserialized_pdu_from_reader<R>(reader: &mut R, pdu_type: PduType) -> std::result::Result<DeserializedPdu, PduDeserializationError>
+pub fn deserialized_pdu_from_reader<R>(
+    reader: &mut R,
+    pdu_type: PduType,
+) -> std::result::Result<DeserializedPdu, PduDeserializationError>
 where
-    R: Read
+    R: Read,
 {
     Ok(match pdu_type {
         PduType::AssociateRequest => {
-            DeserializedPdu::AssociateRequest(
-                deserialize_associate_pdu(reader)?
-            )
-        },
-        PduType::Abort => {
-            DeserializedPdu::Abort(
-                deserialize_abort_pdu(reader)?
-            )
+            DeserializedPdu::AssociateRequest(deserialize_associate_pdu(reader)?)
         }
+        PduType::Abort => DeserializedPdu::Abort(deserialize_abort_pdu(reader)?),
         _ => todo!(),
     })
 }

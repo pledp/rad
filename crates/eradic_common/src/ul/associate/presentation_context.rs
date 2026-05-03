@@ -3,11 +3,12 @@ use std::result::Result;
 
 use thiserror::Error;
 
+use crate::pdu::{PDU_TYPE_LENGTH, read_padding, vec8_add_padding};
 use crate::ul::associate::PduDeserializationError;
+use crate::ul::associate::syntax::SyntaxItem;
 use crate::ul::associate::{
     AssociateItemType, CONTEXT_ID_LENGTH, ITEM_LENGTH_LENGTH, RESULT_LENGTH, next_byte_item_type,
 };
-use crate::pdu::{PDU_TYPE_LENGTH, read_padding, vec8_add_padding};
 
 /// Length of the presentation context item without the variable field.
 pub const PRESENTATION_CONTEXT_ITEM_NO_VARIABLE_FIELDS_LENGTH: u16 = 4;
@@ -24,8 +25,10 @@ pub struct PresentationContextItem {
 
 #[derive(Debug, Error)]
 pub enum PresentationContextError {
-    #[error("Invalid item type, must be `AssociateItemType::PresentationContextRq` or `AssociateItemType::PresentationContextAc`: {0}")]
-    InvalidPduType(AssociateItemType),
+    #[error(
+        "Invalid item type, must be `AssociateItemType::PresentationContextRq` or `AssociateItemType::PresentationContextAc`: {0}"
+    )]
+    InvalidItemType(AssociateItemType),
 }
 
 impl PresentationContextItem {
@@ -47,7 +50,7 @@ impl PresentationContextItem {
                 result.unwrap(),
                 transfer_syntax_items,
             )),
-            _ => Err(PresentationContextError::InvalidPduType(item_type)),
+            _ => Err(PresentationContextError::InvalidItemType(item_type)),
         }
     }
 
@@ -210,90 +213,7 @@ impl PresentationContextItemBuilder {
     }
 }
 
-#[derive(Debug, Error)]
-pub enum SyntaxItemError {
-    #[error(
-        "Item type must be {:?} or {:?}",
-        AssociateItemType::AbstractSyntax,
-        AssociateItemType::TransferSyntax
-    )]
-    InvalidItemType,
-}
-
-#[derive(Debug, PartialEq)]
-pub struct SyntaxItem {
-    pub item_type: AssociateItemType,
-    pub length: u16,
-    syntax: String,
-}
-
-impl SyntaxItem {
-    /// Creates a SyntaxItem.
-    ///
-    /// [SyntaxItem] may represent an abstract syntax or a transfer syntax.
-    ///
-    /// # Arguments
-    /// * `item_type` - Must be [AssociateItemType::AbstractSyntax] or [AssociateItemType::TransferSyntax].
-    pub fn new(item_type: AssociateItemType, syntax: &str) -> Result<Self, SyntaxItemError> {
-        match item_type {
-            AssociateItemType::AbstractSyntax | AssociateItemType::TransferSyntax => {}
-            _ => {
-                return Err(SyntaxItemError::InvalidItemType);
-            }
-        }
-
-        Ok(Self {
-            item_type,
-            length: syntax.len() as u16,
-            syntax: syntax.into(),
-        })
-    }
-
-    pub fn item_length(&self) -> u32 {
-        const SYNTAX_ITEM_DEFAULT_LENGTH: u32 = 4;
-
-        SYNTAX_ITEM_DEFAULT_LENGTH + self.length as u32
-    }
-
-    pub fn syntax(&self) -> &str {
-        &self.syntax
-    }
-}
-
-pub struct SyntaxItemBuilder {
-    item_type: Option<AssociateItemType>,
-    syntax: Option<String>,
-}
-
-impl SyntaxItemBuilder {
-    pub fn new() -> Self {
-        Self {
-            item_type: None,
-            syntax: None,
-        }
-    }
-
-    pub fn item_type(mut self, item_type: AssociateItemType) -> Self {
-        self.item_type = Some(item_type);
-        self
-    }
-
-    pub fn syntax<S: Into<String>>(mut self, syntax: S) -> Self {
-        self.syntax = Some(syntax.into());
-        self
-    }
-
-    pub fn build(self) -> Result<SyntaxItem, SyntaxItemError> {
-        SyntaxItem::new(
-            self.item_type.unwrap(),
-            &self.syntax.unwrap(),
-        )
-    }
-}
-
-pub(crate) fn serialize_presentation_context_item(
-    item: &PresentationContextItem,
-) -> Vec<u8> {
+pub(crate) fn serialize_presentation_context_item(item: &PresentationContextItem) -> Vec<u8> {
     let mut pdu: Vec<u8> = Vec::new();
 
     pdu.push(item.item_type.into());
@@ -325,9 +245,12 @@ pub(crate) fn serialize_presentation_context_item(
     pdu
 }
 
-/// Deserialize [PresentationContextItem] from a reader.
-/// DICOM standard expects the Abstract Syntax Item to be before the Transfer Syntax Item.
-/// [deserialize_presentation_context_item] does not handle correct ordering.
+/// Deserializes bytes from a [Read] into a [PresentationContextItem].
+///
+/// # Errors
+#[doc = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/errors/presentation_item_deserialize_errors.md"))]
+#[doc = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/errors/deserialize_errors.md"))]
+#[doc = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/errors/item_deserialize_errors.md"))]
 pub(crate) fn deserialize_presentation_context_item<T: Read>(
     reader: &mut T,
 ) -> Result<PresentationContextItem, PduDeserializationError> {
@@ -360,13 +283,7 @@ pub(crate) fn deserialize_presentation_context_item<T: Read>(
     );
 
     while !syntax_reader.fill_buf()?.is_empty() {
-        let next_type = next_byte_item_type(
-            syntax_reader
-                .fill_buf()?
-                .first()
-                .copied()
-                .unwrap()
-        )?;
+        let next_type = next_byte_item_type(syntax_reader.fill_buf()?.first().copied().unwrap())?;
 
         match next_type {
             AssociateItemType::AbstractSyntax => {
@@ -378,7 +295,7 @@ pub(crate) fn deserialize_presentation_context_item<T: Read>(
 
             _ => {}
         }
-    };
+    }
 
     Ok(PresentationContextItem::new(
         pdu_type[0].try_into()?,
@@ -403,8 +320,9 @@ pub(crate) fn serialize_syntax_item(item: &SyntaxItem) -> Vec<u8> {
 /// Deserializes bytes from a [Read] into a [SyntaxItem].
 ///
 /// # Errors
-/// - Returns an error if the reader does not contain enough bytes (4 + Item Length).
-/// - Returns an error if [AssociateItemType] is invalid.
+#[doc = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/errors/syntax_deserialize_errors.md"))]
+#[doc = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/errors/deserialize_errors.md"))]
+#[doc = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/errors/item_deserialize_errors.md"))]
 pub(crate) fn deserialize_syntax_item<T: Read>(
     reader: &mut T,
 ) -> Result<SyntaxItem, PduDeserializationError> {
@@ -422,8 +340,7 @@ pub(crate) fn deserialize_syntax_item<T: Read>(
     reader.read_exact(&mut syntax)?;
 
     Ok(SyntaxItem::new(
-        item_type[0]
-            .try_into()?,
+        item_type[0].try_into()?,
         &String::from_utf8(syntax)?,
     )?)
 }
@@ -431,6 +348,8 @@ pub(crate) fn deserialize_syntax_item<T: Read>(
 #[cfg(test)]
 mod tests {
     use std::io::Cursor;
+
+    use crate::ul::associate::syntax::{SyntaxItem, SyntaxItemError};
 
     use super::*;
 
@@ -447,8 +366,7 @@ mod tests {
             0x30, 0x30, 0x38, 0x2e, 0x31, 0x2e, 0x32,
         ];
 
-        let item =
-            SyntaxItem::new(AssociateItemType::TransferSyntax, "1.2.840.10008.1.1").unwrap();
+        let item = SyntaxItem::new(AssociateItemType::TransferSyntax, "1.2.840.10008.1.1").unwrap();
         assert_eq!(item.item_length(), data.len() as u32);
     }
 
@@ -474,8 +392,7 @@ mod tests {
             0x30, 0x30, 0x38, 0x2e, 0x31, 0x2e, 0x32,
         ]);
 
-        let item =
-            SyntaxItem::new(AssociateItemType::TransferSyntax, "1.2.840.10008.1.2").unwrap();
+        let item = SyntaxItem::new(AssociateItemType::TransferSyntax, "1.2.840.10008.1.2").unwrap();
 
         assert_eq!(item, deserialize_syntax_item(&mut data).unwrap());
     }
@@ -509,6 +426,19 @@ mod tests {
     }
 
     #[test]
+    fn test_deserialize_syntax_item_encode_err() {
+        let mut data = Cursor::new(vec![
+            0x40, 0x00, 0x00, 0x11, 0x31, 0x2e, 0x82, 0x32, 0x38, 0x34, 0x30, 0x2e, 0x31, 0x30,
+            0x30, 0x30, 0x38, 0x2e, 0x31, 0x2e, 0x32,
+        ]);
+
+        assert!(matches!(
+            deserialize_syntax_item(&mut data),
+            Err(PduDeserializationError::InvalidEncoding(_))
+        ));
+    }
+
+    #[test]
     fn test_serialize_syntax_item_ok() {
         let mut data = vec![
             0x40, 0x00, 0x00, 0x11, 0x31, 0x2e, 0x32, 0x2e, 0x38, 0x34, 0x30, 0x2e, 0x31, 0x30,
@@ -521,15 +451,5 @@ mod tests {
             ),
             data
         );
-    }
-
-    #[test]
-    fn test_syntax_item_deserialize_serialize_cycle() {
-        let item =
-            SyntaxItem::new(AssociateItemType::TransferSyntax, "1.2.840.10008.1.2").unwrap();
-        let serialized = serialize_syntax_item(&item);
-        let deserialized_item = deserialize_syntax_item(&mut Cursor::new(serialized)).unwrap();
-
-        assert_eq!(item, deserialized_item);
     }
 }
