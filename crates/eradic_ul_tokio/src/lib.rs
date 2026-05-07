@@ -12,16 +12,17 @@ use thiserror::Error;
 use tokio::io::AsyncWrite;
 use tokio::{
     io::{AsyncRead, AsyncReadExt, AsyncWriteExt},
-    net::{TcpStream},
-    sync::{mpsc},
-    task::JoinSet
+    net::TcpStream,
+    sync::mpsc,
+    task::JoinSet,
 };
 
-use tracing::{Instrument, Level, info, span};
+use tracing::{Instrument, Level, Span, info, info_span, instrument, span};
 use tracing_log::log::{error, warn};
 
 use eradic_common::ul::associate::{
-    AssociateRqAcPdu, PduDeserializationError, deserialized_pdu_from_reader, serialize_associate_pdu
+    AssociateRqAcPdu, PduDeserializationError, deserialized_pdu_from_reader,
+    serialize_associate_pdu,
 };
 use eradic_common::ul::connection::{UpperLayerAcceptorConnection, handle_server_event};
 use eradic_common::ul::event::{Command, Event, Indication, event_from_deserialized_pdu};
@@ -39,7 +40,7 @@ pub enum IoError {
     #[error(transparent)]
     Io(#[from] std::io::Error),
     #[error(transparent)]
-    PduDeserializationError(#[from] PduDeserializationError)
+    PduDeserializationError(#[from] PduDeserializationError),
 }
 
 #[derive(Debug, Error)]
@@ -54,18 +55,16 @@ pub enum TaskError {
     ReadError(#[from] IoError),
 }
 
-pub async fn handle_client<F, Fut>(tcp: TcpStream, socket_addr: SocketAddr, scu_handler: F) -> Result<(), HandleClientError>
+#[instrument(skip(tcp, scu_handler) fields(ip = %socket_addr.ip(), port = %socket_addr.port()))]
+pub async fn handle_client<F, Fut>(
+    tcp: TcpStream,
+    socket_addr: SocketAddr,
+    scu_handler: F,
+) -> Result<(), HandleClientError>
 where
     F: Fn(Indication) -> Fut + Send + Sync + 'static,
     Fut: Future<Output = Option<Event>> + Send + 'static,
 {
-    let span = span!(Level::INFO, "connection",
-        ip = %socket_addr.ip(),
-        port = socket_addr.port()
-    );
-
-    let _guard = span.enter();
-
     info!(
         "Connected client: {}:{}",
         socket_addr.ip(),
@@ -83,7 +82,7 @@ where
     let event_tx_user = event_tx.clone();
 
     let user_span = span!(
-        parent: span.clone(),
+        parent: Span::current(),
         Level::INFO,
         "UL SCU connection task",
     );
@@ -91,10 +90,7 @@ where
     set.spawn(
         async move {
             while let Some(indication) = user_rx.recv().await {
-                info!(
-                    "Received indication: {}",
-                    <&str>::from(&indication)
-                );
+                info!("Received indication: {}", <&str>::from(&indication));
 
                 if let Some(event) = scu_handler(indication).await {
                     event_tx_user.send(event).await;
@@ -104,11 +100,11 @@ where
             info!("All writers out of scope, exiting task");
             Ok(())
         }
-        .instrument(user_span)
+        .instrument(user_span),
     );
 
     let event_span = span!(
-        parent: span.clone(),
+        parent: Span::current(),
         Level::INFO,
         "UL SCU event task",
     );
@@ -125,43 +121,44 @@ where
     );
 
     let command_span = span!(
-        parent: span.clone(),
+        parent: Span::current(),
         Level::INFO,
         "UL SCU command task",
     );
-    set.spawn(
-        handle_command_task(writer, command_rx, user_tx)
-            .instrument(command_span),
-    );
-
+    set.spawn(handle_command_task(writer, command_rx, user_tx).instrument(command_span));
 
     let read_span = span!(
-        parent: span.clone(),
+        parent: Span::current(),
         Level::INFO,
         "UL SCU PDU read task",
     );
 
     // TODO: Move to other functions, too nested
-    set.spawn(async move {
-        loop {
-            let (buf, pdu_type) = match read_full_pdu(&mut reader).await {
-                Ok(val) => val,
-                Err(e) => {
-                    event_tx.send(Event::TransportConnectionClosedIndication).await;
-                    return Err(TaskError::from(e))
-                }
-            };
+    set.spawn(
+        async move {
+            loop {
+                let (buf, pdu_type) = match read_full_pdu(&mut reader).await {
+                    Ok(val) => val,
+                    Err(e) => {
+                        event_tx
+                            .send(Event::TransportConnectionClosedIndication)
+                            .await;
+                        return Err(TaskError::from(e));
+                    }
+                };
 
-            info!("PDU received: {:?}", pdu_type);
+                info!("PDU received: {:?}", pdu_type);
 
-            event_tx.send(
-                event_from_deserialized_pdu(
-                    deserialized_pdu_from_reader(&mut Cursor::new(buf), pdu_type)
-                        .map_err(|e| IoError::from(e))?
-                )
-            ).await;
+                event_tx
+                    .send(event_from_deserialized_pdu(
+                        deserialized_pdu_from_reader(&mut Cursor::new(buf), pdu_type)
+                            .map_err(|e| IoError::from(e))?,
+                    ))
+                    .await;
+            }
         }
-    }.instrument(read_span));
+        .instrument(read_span),
+    );
 
     // End all tasks when one task ends.
     // There is only one "correct" way to end the association,
@@ -194,23 +191,20 @@ async fn handle_event_task(
     calling: IpAddr,
     calling_port: u16,
 ) -> Result<(), TaskError> {
-    let mut conn = UpperLayerAcceptorConnection::new_server(called, called_port, calling, calling_port);
+    let mut conn =
+        UpperLayerAcceptorConnection::new_server(called, called_port, calling, calling_port);
 
     while let Some(event) = event_rx.recv().await {
         info!("Event received");
 
-        let (command, new_state) = handle_server_event(
-            conn,
-            event,
-        )
-        .unwrap();
+        let (command, new_state) = handle_server_event(conn, event).unwrap();
 
         conn = new_state;
 
         if let Some(cmd) = command {
             command_tx.send(cmd).await;
         }
-    };
+    }
 
     info!("Exiting");
     Ok(())
@@ -227,7 +221,8 @@ where
     while let Some(command) = rx.recv().await {
         match command {
             Command::AssociateAcceptPdu(resp) => {
-                handle_Associate_response(AssociateRequestResponse::Accepted(resp), &mut writer).await;
+                handle_Associate_response(AssociateRequestResponse::Accepted(resp), &mut writer)
+                    .await;
             }
 
             Command::AssociateIndication(indication) => {
@@ -241,7 +236,7 @@ where
                     .send(Indication::AbortIndication(indication))
                     .await;
 
-                return Ok(())
+                return Ok(());
             }
 
             Command::ProviderAbortIndication(indication) => {
@@ -249,7 +244,7 @@ where
                     .send(Indication::ProviderAbortIndication(indication))
                     .await;
 
-                return Ok(())
+                return Ok(());
             }
 
             _ => todo!(),
@@ -278,10 +273,8 @@ where
     Ok((buffer, header.pdu_type))
 }
 
-async fn handle_Associate_response<W>(
-    response: AssociateRequestResponse,
-    tcp: &mut W,
-)
+#[instrument(skip(tcp))]
+async fn handle_Associate_response<W>(response: AssociateRequestResponse, tcp: &mut W)
 where
     W: AsyncWrite + Unpin,
 {

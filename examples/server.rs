@@ -9,14 +9,16 @@ use std::sync::{
     atomic::{AtomicI64, Ordering},
 };
 
-use tokio::{
-    net::{TcpListener},
-};
+use tokio::net::TcpListener;
 
+use opentelemetry::global;
+use opentelemetry::trace::TracerProvider as _; // brings .tracer() into scope
+use opentelemetry_otlp::SpanExporter;
+use opentelemetry_sdk::trace::SdkTracerProvider;
 use tracing::{Level, info};
-use tracing_subscriber::{FmtSubscriber, fmt};
+use tracing_subscriber::{fmt, layer::SubscriberExt, util::SubscriberInitExt};
 
-use eradic::ul::event::{Indication};
+use eradic::ul::event::Indication;
 use eradic_ul_tokio::handle_client;
 
 use crate::service_user::LocalUpperLayerServiceUser;
@@ -24,19 +26,9 @@ use crate::service_user::LocalUpperLayerServiceUser;
 pub type Result<T> = std::result::Result<T, Error>;
 pub type Error = Box<dyn std::error::Error + Send + Sync>;
 
-
 #[tokio::main]
 async fn main() -> Result<()> {
-    tracing_log::LogTracer::init()?;
-
-    let subscriber = FmtSubscriber::builder()
-        .with_max_level(Level::DEBUG)
-        .with_file(true)
-        .with_line_number(true)
-        .fmt_fields(fmt::format::DefaultFields::new())
-        .finish();
-
-    tracing::subscriber::set_global_default(subscriber)?;
+    let provider = init_telemetry()?;
 
     info!("System initialized");
 
@@ -60,10 +52,8 @@ async fn main() -> Result<()> {
                         match indication {
                             Indication::AssociateIndication(indication) => {
                                 Some(ul_scu_closure.handle_associate_request(indication).await)
-                            },
-                            Indication::ProviderAbortIndication(indicationn) => {
-                                return None
                             }
+                            Indication::ProviderAbortIndication(indicationn) => return None,
                             Indication::AbortIndication(indication) => {
                                 return None;
                             }
@@ -82,4 +72,50 @@ async fn main() -> Result<()> {
             result
         });
     }
+
+    provider.shutdown()?;
+    Ok(())
+}
+
+pub fn init_telemetry() -> Result<SdkTracerProvider> {
+    // --- traces -> Tempo ---
+    let exporter = SpanExporter::builder()
+        .with_tonic()
+        .build()
+        .expect("Failed to build span exporter");
+
+    let provider = SdkTracerProvider::builder()
+        .with_batch_exporter(exporter)
+        .build();
+
+    global::set_tracer_provider(provider.clone());
+
+    let tracer = provider.tracer("eradic_ul");
+    let otel_layer = tracing_opentelemetry::layer().with_tracer(tracer);
+
+    metrics_exporter_prometheus::PrometheusBuilder::new()
+        .install()
+        .expect("Failed to install Prometheus exporter");
+
+    let (loki_layer, task) = tracing_loki::builder()
+        .label("service_name", "eradic_ul")?
+        .build_url(tracing_loki::url::Url::parse("http://localhost:3100")?)?;
+
+    tracing_subscriber::registry()
+        .with(tracing_subscriber::EnvFilter::new(
+            "off,server=debug,eradic_ul=debug,opentelemetry_sdk=error,opentelemetry_otlp=error,tonic=error,tower=off,hyper_util=off,h2=off,tracing_loki=error"
+        ))
+        .with(
+            fmt::layer()
+                .with_file(true)
+                .with_line_number(true)
+                .fmt_fields(fmt::format::DefaultFields::new()),
+        )
+        .with(otel_layer)
+        .with(loki_layer)
+        .init();
+
+    tokio::spawn(task);
+
+    Ok(provider)
 }

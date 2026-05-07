@@ -1,0 +1,36 @@
+services:
+  loki:
+    image: grafana/loki:latest
+    ports:
+      - "3100:3100"
+    command: -config.file=/etc/loki/local-config.yaml
+
+  tempo:
+    image: grafana/tempo:latest
+    command: ["-config.file=/etc/tempo/tempo.yaml"]
+    volumes:
+      - ./docker/tempo.yaml:/etc/tempo/tempo.yaml
+    ports:
+      - "4317:4317" # OTLP gRPC - your app sends traces here
+      - "3200:3200" # Tempo HTTP API - Grafana reads from here
+
+  prometheus:
+    image: prom/prometheus:latest
+    volumes:
+      - ./docker/prometheus.yaml:/etc/prometheus/prometheus.yaml
+    ports:
+      - "9090:9090" # Prometheus UI + API
+
+  grafana:
+    image: grafana/grafana:latest
+    ports:
+      - "3000:3000" # Grafana UI - open this in browser
+    environment:
+      - GF_AUTH_ANONYMOUS_ENABLED=true
+      - GF_AUTH_ANONYMOUS_ORG_ROLE=Admin
+    volumes:
+      - ./docker/grafana-datasources.yaml:/etc/grafana/provisioning/datasources/datasources.yaml
+      - grafana-storage:/var/lib/grafana
+
+volumes:
+  grafana-storage: # declare the named volume
