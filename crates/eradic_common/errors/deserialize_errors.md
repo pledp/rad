@@ -1,1 +1,2 @@
+- [`PduDeserializationError::UnknownItemType`] if the item type is not recognized.
 - [`PduDeserializationError::InvalidLength`] if the reader does not contain enough bytes.

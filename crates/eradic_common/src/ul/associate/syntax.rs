@@ -26,7 +26,6 @@ pub(crate) fn serialize_syntax_item(item: &SyntaxItem) -> Vec<u8> {
 /// # Errors
 #[doc = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/errors/syntax_deserialize_errors.md"))]
 #[doc = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/errors/deserialize_errors.md"))]
-#[doc = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/errors/item_deserialize_errors.md"))]
 ///
 /// See [DICOM standard part 8](https://dicom.nema.org/medical/dicom/current/output/html/part08.html#chapter_8)
 pub(crate) fn deserialize_syntax_item<T: Read>(
@@ -107,29 +106,6 @@ pub struct SyntaxItemBuilder {
     syntax: Option<String>,
 }
 
-impl SyntaxItemBuilder {
-    pub fn new() -> Self {
-        Self {
-            item_type: None,
-            syntax: None,
-        }
-    }
-
-    pub fn item_type(mut self, item_type: AssociateItemType) -> Self {
-        self.item_type = Some(item_type);
-        self
-    }
-
-    pub fn syntax<S: Into<String>>(mut self, syntax: S) -> Self {
-        self.syntax = Some(syntax.into());
-        self
-    }
-
-    pub fn build(self) -> Result<SyntaxItem, SyntaxItemError> {
-        SyntaxItem::new(self.item_type.unwrap(), &self.syntax.unwrap())
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use std::io::Cursor;
@@ -192,6 +168,19 @@ mod tests {
             Err(PduDeserializationError::InvalidSyntaxItem(
                 SyntaxItemError::InvalidItemType
             ))
+        ));
+    }
+
+    #[test]
+    fn test_deserialize_syntax_item_unknown_type() {
+        let mut data = Cursor::new(vec![
+            0x80, 0x00, 0x00, 0x11, 0x31, 0x2e, 0x32, 0x2e, 0x38, 0x34, 0x30, 0x2e, 0x31, 0x30,
+            0x30, 0x30, 0x38, 0x2e, 0x31, 0x2e, 0x32,
+        ]);
+
+        assert!(matches!(
+            deserialize_syntax_item(&mut data),
+            Err(PduDeserializationError::UnknownItemType(_))
         ));
     }
 

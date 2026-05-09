@@ -250,7 +250,6 @@ pub(crate) fn serialize_presentation_context_item(item: &PresentationContextItem
 /// # Errors
 #[doc = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/errors/presentation_item_deserialize_errors.md"))]
 #[doc = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/errors/deserialize_errors.md"))]
-#[doc = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/errors/item_deserialize_errors.md"))]
 pub(crate) fn deserialize_presentation_context_item<T: Read>(
     reader: &mut T,
 ) -> Result<PresentationContextItem, PduDeserializationError> {

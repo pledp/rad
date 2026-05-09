@@ -7,7 +7,7 @@ use crate::ul::associate::presentation_context::{
     PresentationContextItemBuilder, PresentationContextResult,
 };
 use crate::ul::associate::rj::ServiceUserReason;
-use crate::ul::associate::syntax::SyntaxItemBuilder;
+use crate::ul::associate::syntax::{SyntaxItem, SyntaxItemBuilder};
 use crate::ul::associate::{
     ApplicationContextItem, AssociateItemType, AssociateRqAcPduError, PduDeserializationError,
     RejectedAssociateResult, UserInfoItem, UserInformationSubItem,
@@ -309,20 +309,16 @@ impl TryFrom<AssociateRequestIndication> for AssociateRqAcPdu {
             let mut builder = PresentationContextItemBuilder::new()
                 .item_type(AssociateItemType::PresentationContextRq)
                 .context_id(context.context_id)
-                .abstract_syntax_item(
-                    SyntaxItemBuilder::new()
-                        .item_type(AssociateItemType::AbstractSyntax)
-                        .syntax(context.abstract_syntax.clone())
-                        .build()?,
-                );
+                .abstract_syntax_item(SyntaxItem::new(
+                    AssociateItemType::AbstractSyntax,
+                    &context.abstract_syntax,
+                )?);
 
             for transfer in &context.transfer_syntax {
-                builder = builder.add_transfer_syntax(
-                    SyntaxItemBuilder::new()
-                        .item_type(AssociateItemType::TransferSyntax)
-                        .syntax(transfer)
-                        .build()?,
-                );
+                builder = builder.add_transfer_syntax(SyntaxItem::new(
+                    AssociateItemType::TransferSyntax,
+                    &transfer,
+                )?);
             }
 
             presentation_context_items.push(builder.build()?);
@@ -373,12 +369,10 @@ impl TryFrom<AcceptedAssociateRequestResponse> for AssociateRqAcPdu {
                     .item_type(AssociateItemType::PresentationContextAc)
                     .context_id(context.context_id)
                     .result(context.result)
-                    .add_transfer_syntax(
-                        SyntaxItemBuilder::new()
-                            .item_type(AssociateItemType::TransferSyntax)
-                            .syntax(context.transfer_syntax.clone())
-                            .build()?,
-                    )
+                    .add_transfer_syntax(SyntaxItem::new(
+                        AssociateItemType::TransferSyntax,
+                        &context.transfer_syntax,
+                    )?)
                     .build()?,
             );
         }

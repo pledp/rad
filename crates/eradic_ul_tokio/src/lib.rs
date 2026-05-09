@@ -1,12 +1,6 @@
 use core::net::SocketAddr;
-use std::io::{Cursor, Read};
+use std::io::Cursor;
 use std::net::IpAddr;
-use std::string::String;
-use std::sync::{
-    Arc,
-    atomic::{AtomicI64, Ordering},
-};
-
 use thiserror::Error;
 
 use tokio::io::AsyncWrite;
@@ -17,7 +11,7 @@ use tokio::{
     task::JoinSet,
 };
 
-use tracing::{Instrument, Level, Span, info, info_span, instrument, span};
+use tracing::{info, instrument};
 use tracing_log::log::{error, warn};
 
 use eradic_common::ul::associate::{
@@ -28,12 +22,6 @@ use eradic_common::ul::connection::{UpperLayerAcceptorConnection, handle_server_
 use eradic_common::ul::event::{Command, Event, Indication, event_from_deserialized_pdu};
 use eradic_common::ul::pdu::{PDU_HEADER_LENGTH, PduType, read_pdu_header};
 use eradic_common::ul::service::AssociateRequestResponse;
-
-#[derive(Debug, Error)]
-pub enum ServiceUserError {
-    #[error("Service User / Application Entity was not found")]
-    ServiceUserNotFound,
-}
 
 #[derive(Debug, Error)]
 pub enum IoError {
@@ -53,6 +41,8 @@ pub enum HandleClientError {
 pub enum TaskError {
     #[error(transparent)]
     ReadError(#[from] IoError),
+    #[error(transparent)]
+    PduDeserializationError(#[from] PduDeserializationError),
 }
 
 #[instrument(skip(tcp, scu_handler) fields(ip = %socket_addr.ip(), port = %socket_addr.port()))]
@@ -79,90 +69,22 @@ where
 
     let mut set: JoinSet<Result<(), TaskError>> = JoinSet::new();
 
-    let event_tx_user = event_tx.clone();
+    set.spawn(user_connection_task(user_rx, event_tx.clone(), scu_handler));
 
-    let user_span = span!(
-        parent: Span::current(),
-        Level::INFO,
-        "UL SCU connection task",
-    );
+    set.spawn(handle_event_task(
+        event_rx,
+        command_tx.clone(),
+        writer.local_addr()?.ip(),
+        writer.local_addr()?.port(),
+        socket_addr.ip(),
+        socket_addr.port(),
+    ));
 
-    set.spawn(
-        async move {
-            while let Some(indication) = user_rx.recv().await {
-                info!("Received indication: {}", <&str>::from(&indication));
-
-                if let Some(event) = scu_handler(indication).await {
-                    event_tx_user.send(event).await;
-                }
-            }
-
-            info!("All writers out of scope, exiting task");
-            Ok(())
-        }
-        .instrument(user_span),
-    );
-
-    let event_span = span!(
-        parent: Span::current(),
-        Level::INFO,
-        "UL SCU event task",
-    );
-    set.spawn(
-        handle_event_task(
-            event_rx,
-            command_tx.clone(),
-            writer.local_addr()?.ip(),
-            writer.local_addr()?.port(),
-            socket_addr.ip(),
-            socket_addr.port(),
-        )
-        .instrument(event_span),
-    );
-
-    let command_span = span!(
-        parent: Span::current(),
-        Level::INFO,
-        "UL SCU command task",
-    );
-    set.spawn(handle_command_task(writer, command_rx, user_tx).instrument(command_span));
-
-    let read_span = span!(
-        parent: Span::current(),
-        Level::INFO,
-        "UL SCU PDU read task",
-    );
+    set.spawn(handle_command_task(writer, command_rx, user_tx));
 
     // TODO: Move to other functions, too nested
-    set.spawn(
-        async move {
-            loop {
-                let (buf, pdu_type) = match read_full_pdu(&mut reader).await {
-                    Ok(val) => val,
-                    Err(e) => {
-                        event_tx
-                            .send(Event::TransportConnectionClosedIndication)
-                            .await;
-                        return Err(TaskError::from(e));
-                    }
-                };
+    set.spawn(pdu_read_task(reader, event_tx));
 
-                info!("PDU received: {:?}", pdu_type);
-
-                event_tx
-                    .send(event_from_deserialized_pdu(
-                        deserialized_pdu_from_reader(&mut Cursor::new(buf), pdu_type)
-                            .map_err(|e| IoError::from(e))?,
-                    ))
-                    .await;
-            }
-        }
-        .instrument(read_span),
-    );
-
-    // End all tasks when one task ends.
-    // There is only one "correct" way to end the association,
-    // If `Event::TransportConnectionClosedIndication` occurs first, it requires special handling
     if let Some(result) = set.join_next().await {
         match result {
             Ok(Err(e)) => {
@@ -183,6 +105,32 @@ where
     Ok(())
 }
 
+#[instrument(skip(reader, event_tx))]
+async fn pdu_read_task<R>(mut reader: R, event_tx: mpsc::Sender<Event>) -> Result<(), TaskError>
+where
+    R: AsyncRead + Unpin,
+{
+    loop {
+        let (buf, pdu_type) = match read_full_pdu(&mut reader).await {
+            Ok(val) => val,
+            Err(e) => {
+                event_tx
+                    .send(Event::TransportConnectionClosedIndication)
+                    .await;
+                return Err(TaskError::from(e));
+            }
+        };
+        info!("PDU received: {:?}", pdu_type);
+        event_tx
+            .send(event_from_deserialized_pdu(deserialized_pdu_from_reader(
+                &mut Cursor::new(buf),
+                pdu_type,
+            )?))
+            .await;
+    }
+}
+
+#[instrument]
 async fn handle_event_task(
     mut event_rx: mpsc::Receiver<Event>,
     command_tx: mpsc::Sender<Command>,
@@ -210,6 +158,7 @@ async fn handle_event_task(
     Ok(())
 }
 
+#[instrument(skip(writer))]
 async fn handle_command_task<W>(
     mut writer: W,
     mut rx: mpsc::Receiver<Command>,
@@ -254,6 +203,29 @@ where
     Ok(())
 }
 
+#[instrument(skip(scu_handler))]
+async fn user_connection_task<F, Fut>(
+    mut rx: mpsc::Receiver<Indication>,
+    event_tx: mpsc::Sender<Event>,
+    scu_handler: F,
+) -> Result<(), TaskError>
+where
+    F: Fn(Indication) -> Fut + Send + Sync + 'static,
+    Fut: Future<Output = Option<Event>> + Send + 'static,
+{
+    while let Some(indication) = rx.recv().await {
+        info!("Received indication: {}", <&str>::from(&indication));
+
+        if let Some(event) = scu_handler(indication).await {
+            event_tx.send(event).await;
+        }
+    }
+
+    info!("All writers out of scope, exiting task");
+    Ok(())
+}
+
+#[instrument(skip(reader))]
 async fn read_full_pdu<R>(reader: &mut R) -> Result<(Vec<u8>, PduType), IoError>
 where
     R: AsyncRead + Unpin,

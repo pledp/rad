@@ -67,7 +67,7 @@ impl TryFrom<u8> for AssociateItemType {
             0x30 => Ok(AssociateItemType::AbstractSyntax),
             0x40 => Ok(AssociateItemType::TransferSyntax),
             0x50 => Ok(AssociateItemType::UserInformation),
-            _ => Err(PduDeserializationError::InvalidItemType(value)),
+            _ => Err(PduDeserializationError::UnknownItemType(value)),
         }
     }
 }
@@ -88,7 +88,7 @@ impl From<AssociateItemType> for u8 {
 #[derive(Debug, Error)]
 pub enum PduDeserializationError {
     #[error("Item type does not exist: {0}")]
-    InvalidItemType(u8),
+    UnknownItemType(u8),
     #[error(transparent)]
     InvalidSyntaxItem(#[from] SyntaxItemError),
     #[error(transparent)]

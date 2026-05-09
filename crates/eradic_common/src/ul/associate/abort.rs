@@ -2,7 +2,7 @@ use std::io::Read;
 
 use thiserror::Error;
 
-use crate::{pdu::{PDU_HEADER_LENGTH, PDU_LENGTH_LENGTH, PDU_TYPE_LENGTH, PduType, read_padding, vec8_add_padding}};
+use crate::pdu::{PDU_LENGTH_LENGTH, PDU_TYPE_LENGTH, PduType, read_padding, vec8_add_padding};
 use crate::ul::associate::PduDeserializationError;
 
 #[derive(Debug, Error)]
@@ -68,7 +68,9 @@ impl TryFrom<u8> for AbortReason {
             x if x == AbortReason::UnrecognizedPdu as u8 => Ok(AbortReason::UnrecognizedPdu),
             x if x == AbortReason::UnexpectedPdu as u8 => Ok(AbortReason::UnexpectedPdu),
             x if x == AbortReason::Reserved as u8 => Ok(AbortReason::Reserved),
-            x if x == AbortReason::UnexpectedPduParam as u8 => Ok(AbortReason::UnrecognizedPduParam),
+            x if x == AbortReason::UnexpectedPduParam as u8 => {
+                Ok(AbortReason::UnrecognizedPduParam)
+            }
             x if x == AbortReason::UnexpectedPduParam as u8 => Ok(AbortReason::UnexpectedPduParam),
             x if x == AbortReason::InvalidPduParam as u8 => Ok(AbortReason::InvalidPduParam),
             _ => Err(AbortParseError::InvalidAbortReason(v)),
@@ -85,15 +87,12 @@ pub struct AssociateAbortPdu {
 }
 
 impl AssociateAbortPdu {
-    pub fn new(
-        source: AbortSource,
-        reason: AbortReason,
-    ) -> Self {
+    pub fn new(source: AbortSource, reason: AbortReason) -> Self {
         Self {
             pdu_type: PduType::Abort,
             length: 4,
             source,
-            reason
+            reason,
         }
     }
 }
@@ -131,7 +130,7 @@ pub fn deserialize_abort_pdu<T: Read>(
 
     match pdu_type {
         PduType::Abort => {}
-        _ => return Err(PduDeserializationError::UnexpectedPduType(pdu_type))
+        _ => return Err(PduDeserializationError::UnexpectedPduType(pdu_type)),
     };
 
     read_padding(reader, 1);
@@ -151,18 +150,26 @@ pub fn deserialize_abort_pdu<T: Read>(
 
     Ok(AssociateAbortPdu::new(
         source[0].try_into()?,
-        reason[0].try_into()?
+        reason[0].try_into()?,
     ))
 }
 
 mod tests {
     use std::io::Cursor;
 
-    use crate::{ul::associate::{PduDeserializationError, abort::{AbortParseError, AbortReason, AbortSource, deserialize_abort_pdu}}, pdu::PduType};
+    use crate::{
+        pdu::PduType,
+        ul::associate::{
+            PduDeserializationError,
+            abort::{AbortParseError, AbortReason, AbortSource, deserialize_abort_pdu},
+        },
+    };
 
     #[test]
     fn test_deserialize_abort_pdu_ok() {
-        let mut reader = Cursor::new(vec![0x07, 0x00, 0x00, 0x00, 0x00, 0x04, 0x00, 0x00, 0x02, 0x00]);
+        let mut reader = Cursor::new(vec![
+            0x07, 0x00, 0x00, 0x00, 0x00, 0x04, 0x00, 0x00, 0x02, 0x00,
+        ]);
 
         let result = deserialize_abort_pdu(&mut reader);
 
@@ -177,11 +184,16 @@ mod tests {
 
     #[test]
     fn test_deserialize_abort_pdu_invalid_type() {
-        let mut reader = Cursor::new(vec![0xFF, 0x00, 0x00, 0x00, 0x00, 0x04, 0x00, 0x00, 0x02, 0x00]);
+        let mut reader = Cursor::new(vec![
+            0xFF, 0x00, 0x00, 0x00, 0x00, 0x04, 0x00, 0x00, 0x02, 0x00,
+        ]);
 
         let result = deserialize_abort_pdu(&mut reader);
 
-        assert!(matches!(result, Err(PduDeserializationError::InvalidPduType(0xFF))));
+        assert!(matches!(
+            result,
+            Err(PduDeserializationError::InvalidPduType(0xFF))
+        ));
     }
 
     #[test]
@@ -190,25 +202,37 @@ mod tests {
 
         let result = deserialize_abort_pdu(&mut reader);
 
-        assert!(matches!(result, Err(PduDeserializationError::InvalidLength(_))));
+        assert!(matches!(
+            result,
+            Err(PduDeserializationError::InvalidLength(_))
+        ));
     }
 
     #[test]
     fn test_deserialize_abort_pdu_invalid_source() {
-        let mut reader = Cursor::new(vec![0x07, 0x00, 0x00, 0x00, 0x00, 0x04, 0x00, 0x00, 0xFF, 0x00]);
+        let mut reader = Cursor::new(vec![
+            0x07, 0x00, 0x00, 0x00, 0x00, 0x04, 0x00, 0x00, 0xFF, 0x00,
+        ]);
         let result = deserialize_abort_pdu(&mut reader);
-        assert!(matches!(result, Err(PduDeserializationError::InvalidAbortPdu(
-            AbortParseError::InvalidAbortSource(_)
-        ))));
+        assert!(matches!(
+            result,
+            Err(PduDeserializationError::InvalidAbortPdu(
+                AbortParseError::InvalidAbortSource(_)
+            ))
+        ));
     }
 
     #[test]
     fn test_deserialize_abort_pdu_invalid_reason() {
-        let mut reader = Cursor::new(vec![0x07, 0x00, 0x00, 0x00, 0x00, 0x04, 0x00, 0x00, 0x02, 0xFF]);
+        let mut reader = Cursor::new(vec![
+            0x07, 0x00, 0x00, 0x00, 0x00, 0x04, 0x00, 0x00, 0x02, 0xFF,
+        ]);
         let result = deserialize_abort_pdu(&mut reader);
-        assert!(matches!(result, Err(PduDeserializationError::InvalidAbortPdu(
-            AbortParseError::InvalidAbortReason(_)
-        ))));
+        assert!(matches!(
+            result,
+            Err(PduDeserializationError::InvalidAbortPdu(
+                AbortParseError::InvalidAbortReason(_)
+            ))
+        ));
     }
-
 }
