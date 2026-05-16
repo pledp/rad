@@ -1,2 +1,2 @@
 - [`PduDeserializationError::InvalidPresentationItem`] - see [PresentationContextError] for variants.
-- [`PduDeserializationError::InvalidSyntaxItem`] - see [SyntaxItemError] for variants.
+- [`PduDeserializationError::UnexpectedItemType`] if a recognized item type appears where only abstract or transfer syntax sub-items are valid.

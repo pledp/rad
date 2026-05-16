@@ -89,6 +89,9 @@ impl From<AssociateItemType> for u8 {
 pub enum PduDeserializationError {
     #[error("Item type does not exist: {0}")]
     UnknownItemType(u8),
+    #[error("Item type unexpected: {0}")]
+    UnexpectedItemType(AssociateItemType),
+
     #[error(transparent)]
     InvalidSyntaxItem(#[from] SyntaxItemError),
     #[error(transparent)]

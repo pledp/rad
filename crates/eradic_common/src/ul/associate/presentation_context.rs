@@ -251,6 +251,7 @@ pub(crate) fn serialize_presentation_context_item(item: &PresentationContextItem
 /// # Errors
 #[doc = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/errors/presentation_item_deserialize_errors.md"))]
 #[doc = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/errors/deserialize_errors.md"))]
+#[doc = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/errors/syntax_deserialize_errors.md"))]
 pub(crate) fn deserialize_presentation_context_item<T: Read>(
     reader: &mut T,
 ) -> Result<PresentationContextItem, PduDeserializationError> {
@@ -292,8 +293,9 @@ pub(crate) fn deserialize_presentation_context_item<T: Read>(
             AssociateItemType::TransferSyntax => {
                 transfer_syntax_items.push(deserialize_syntax_item(&mut syntax_reader)?);
             }
-
-            _ => {}
+            other => {
+                return Err(PduDeserializationError::UnexpectedItemType(other))
+            }
         }
     }
 
@@ -304,4 +306,318 @@ pub(crate) fn deserialize_presentation_context_item<T: Read>(
         abstract_syntax_item,
         transfer_syntax_items,
     )?)
+}
+
+#[cfg(test)]
+mod tests {
+    use std::io::Cursor;
+
+    use super::*;
+    use crate::ul::associate::{AssociateItemType, PduDeserializationError};
+    use crate::ul::associate::syntax::SyntaxItem;
+
+    /// Builds raw bytes for an abstract or transfer syntax sub-item.
+    fn syntax_item_bytes(item_type: u8, syntax: &str) -> Vec<u8> {
+        let mut bytes = vec![item_type, 0x00];
+        bytes.extend_from_slice(&(syntax.len() as u16).to_be_bytes());
+        bytes.extend_from_slice(syntax.as_bytes());
+        bytes
+    }
+
+    /// Builds a complete PresentationContextRq byte stream.
+    fn rq_bytes(context_id: u8, abstract_syntax: &str, transfer_syntaxes: &[&str]) -> Vec<u8> {
+        let abs = syntax_item_bytes(0x30, abstract_syntax);
+        let mut ts_all: Vec<u8> = Vec::new();
+        for ts in transfer_syntaxes {
+            ts_all.extend(syntax_item_bytes(0x40, ts));
+        }
+        let item_length = 4u16 + abs.len() as u16 + ts_all.len() as u16;
+
+        let mut bytes = vec![0x20, 0x00]; // PresentationContextRq, padding
+        bytes.extend_from_slice(&item_length.to_be_bytes());
+        bytes.extend_from_slice(&[context_id, 0x00, 0xFF, 0x00]); // context_id, pad, no-result, pad
+        bytes.extend(abs);
+        bytes.extend(ts_all);
+        bytes
+    }
+
+    /// Builds a complete PresentationContextAc byte stream.
+    fn ac_bytes(context_id: u8, result: u8, transfer_syntax: &str) -> Vec<u8> {
+        let ts = syntax_item_bytes(0x40, transfer_syntax);
+        let item_length = 4u16 + ts.len() as u16;
+
+        let mut bytes = vec![0x21, 0x00]; // PresentationContextAc, padding
+        bytes.extend_from_slice(&item_length.to_be_bytes());
+        bytes.extend_from_slice(&[context_id, 0x00, result, 0x00]); // context_id, pad, result, pad
+        bytes.extend(ts);
+        bytes
+    }
+
+    #[test]
+    fn test_deserialize_rq_with_abstract_and_transfer_syntax() {
+        let data = rq_bytes(0x01, "1.2.840.10008.1.1", &["1.2.840.10008.1.2"]);
+        let item = deserialize_presentation_context_item(&mut Cursor::new(data)).unwrap();
+
+        assert_eq!(item.item_type, AssociateItemType::PresentationContextRq);
+        assert_eq!(item.context_id, 0x01);
+        assert_eq!(item.result, None);
+        assert_eq!(item.abstract_syntax(), Some("1.2.840.10008.1.1"));
+        assert_eq!(item.transfer_syntax(), vec!["1.2.840.10008.1.2"]);
+    }
+
+    #[test]
+    fn test_deserialize_ac_with_acceptance_result() {
+        let data = ac_bytes(0x03, 0x00, "1.2.840.10008.1.2");
+        let item = deserialize_presentation_context_item(&mut Cursor::new(data)).unwrap();
+
+        assert_eq!(item.item_type, AssociateItemType::PresentationContextAc);
+        assert_eq!(item.context_id, 0x03);
+        assert_eq!(item.result, Some(PresentationContextResult::Acceptance));
+        assert_eq!(item.abstract_syntax(), None);
+        assert_eq!(item.transfer_syntax(), vec!["1.2.840.10008.1.2"]);
+    }
+
+    #[test]
+    fn test_deserialize_rq_with_multiple_transfer_syntaxes() {
+        let data = rq_bytes(
+            0x01,
+            "1.2.840.10008.1.1",
+            &["1.2.840.10008.1.2", "1.2.840.10008.1.2.1"],
+        );
+        let item = deserialize_presentation_context_item(&mut Cursor::new(data)).unwrap();
+
+        assert_eq!(item.abstract_syntax(), Some("1.2.840.10008.1.1"));
+        assert_eq!(
+            item.transfer_syntax(),
+            vec!["1.2.840.10008.1.2", "1.2.840.10008.1.2.1"]
+        );
+    }
+
+    #[test]
+    fn test_deserialize_rq_preserves_max_context_id() {
+        // context_id is a u8 and must survive the round-trip at its boundary value
+        let data = rq_bytes(0xFF, "1.2.840.10008.1.1", &["1.2.840.10008.1.2"]);
+        let item = deserialize_presentation_context_item(&mut Cursor::new(data)).unwrap();
+        assert_eq!(item.context_id, 0xFF);
+    }
+
+    #[test]
+    fn test_deserialize_ac_user_rejection_result() {
+        let data = ac_bytes(0x01, 0x01, "1.2.840.10008.1.2");
+        let item = deserialize_presentation_context_item(&mut Cursor::new(data)).unwrap();
+        assert_eq!(item.result, Some(PresentationContextResult::UserRejection));
+    }
+
+    #[test]
+    fn test_deserialize_ac_no_reason_result() {
+        let data = ac_bytes(0x01, 0x02, "1.2.840.10008.1.2");
+        let item = deserialize_presentation_context_item(&mut Cursor::new(data)).unwrap();
+        assert_eq!(item.result, Some(PresentationContextResult::NoReason));
+    }
+
+    #[test]
+    fn test_deserialize_ac_abstract_syntax_not_supported_result() {
+        let data = ac_bytes(0x01, 0x03, "1.2.840.10008.1.2");
+        let item = deserialize_presentation_context_item(&mut Cursor::new(data)).unwrap();
+        assert_eq!(
+            item.result,
+            Some(PresentationContextResult::AbstractSyntaxNotSupported)
+        );
+    }
+
+    #[test]
+    fn test_deserialize_ac_transfer_syntaxes_not_supported_result() {
+        let data = ac_bytes(0x01, 0x04, "1.2.840.10008.1.2");
+        let item = deserialize_presentation_context_item(&mut Cursor::new(data)).unwrap();
+        assert_eq!(
+            item.result,
+            Some(PresentationContextResult::TransferSyntaxesNotSupported)
+        );
+    }
+
+    #[test]
+    fn test_deserialize_unknown_item_type_byte_returns_error() {
+        // 0xFF is not a valid AssociateItemType; try_into() must reject it
+        let mut data = ac_bytes(0x01, 0x00, "1.2.840.10008.1.2");
+        data[0] = 0xFF;
+
+        assert!(matches!(
+            deserialize_presentation_context_item(&mut Cursor::new(data)),
+            Err(PduDeserializationError::UnknownItemType(0xFF))
+        ));
+    }
+
+    #[test]
+    fn test_deserialize_non_presentation_context_item_type_returns_error() {
+        // 0x50 (UserInformation) is a valid AssociateItemType but not allowed as a presentation
+        // context item type; PresentationContextItem::new must reject it
+        let mut data = ac_bytes(0x01, 0x00, "1.2.840.10008.1.2");
+        data[0] = 0x50;
+
+        assert!(matches!(
+            deserialize_presentation_context_item(&mut Cursor::new(data)),
+            Err(PduDeserializationError::InvalidPresentationItem(
+                PresentationContextError::InvalidItemType(_)
+            ))
+        ));
+    }
+
+    #[test]
+    fn test_deserialize_empty_reader_returns_error() {
+        assert!(matches!(
+            deserialize_presentation_context_item(&mut Cursor::new(vec![])),
+            Err(PduDeserializationError::InvalidLength(_))
+        ));
+    }
+
+    #[test]
+    fn test_deserialize_truncated_before_item_length_returns_error() {
+        // item_type byte + padding = 2 bytes; the 2-byte item_length field cannot be read
+        let data = vec![0x20_u8, 0x00];
+        assert!(matches!(
+            deserialize_presentation_context_item(&mut Cursor::new(data)),
+            Err(PduDeserializationError::InvalidLength(_))
+        ));
+    }
+
+    #[test]
+    fn test_deserialize_truncated_within_syntax_bytes_returns_error() {
+        // Valid Rq header, but the last 5 bytes of the transfer syntax string are missing
+        let mut data = rq_bytes(0x01, "1.2.840.10008.1.1", &["1.2.840.10008.1.2"]);
+        data.truncate(data.len() - 5);
+
+        assert!(matches!(
+            deserialize_presentation_context_item(&mut Cursor::new(data)),
+            Err(PduDeserializationError::InvalidLength(_))
+        ));
+    }
+
+    #[test]
+    fn test_deserialize_unknown_syntax_type_inside_context_returns_error() {
+        // 0xFF inside the syntax sub-item area is an unknown type; the inner loop must propagate
+        // the error rather than silently skipping it
+        let syntax_len = 17u16; // "1.2.840.10008.1.1"
+        let item_length = 4u16 + 4 + syntax_len; // context header + corrupted syntax item
+
+        let mut data = vec![0x20, 0x00];
+        data.extend_from_slice(&item_length.to_be_bytes());
+        data.extend_from_slice(&[0x01, 0x00, 0xFF, 0x00]); // context_id, pad, no-result, pad
+        data.push(0xFF); // unknown syntax item type
+        data.push(0x00);
+        data.extend_from_slice(&syntax_len.to_be_bytes());
+        data.extend_from_slice(b"1.2.840.10008.1.1");
+
+        assert!(matches!(
+            deserialize_presentation_context_item(&mut Cursor::new(data)),
+            Err(PduDeserializationError::UnknownItemType(0xFF))
+        ));
+    }
+
+    #[test]
+    fn test_deserialize_invalid_utf8_in_syntax_returns_error() {
+        // Non-UTF-8 bytes inside an abstract syntax string must surface as InvalidEncoding
+        let invalid_utf8: &[u8] = &[0xFF, 0xFE, 0xFD];
+        let abs_len = invalid_utf8.len() as u16;
+        let item_length = 4u16 + 4 + abs_len;
+
+        let mut data = vec![0x20, 0x00];
+        data.extend_from_slice(&item_length.to_be_bytes());
+        data.extend_from_slice(&[0x01, 0x00, 0xFF, 0x00]);
+        data.push(0x30); // AbstractSyntax
+        data.push(0x00);
+        data.extend_from_slice(&abs_len.to_be_bytes());
+        data.extend_from_slice(invalid_utf8);
+
+        assert!(matches!(
+            deserialize_presentation_context_item(&mut Cursor::new(data)),
+            Err(PduDeserializationError::InvalidEncoding(_))
+        ));
+    }
+
+    #[test]
+    fn test_deserialize_recognized_non_syntax_item_type_in_variable_field_returns_error() {
+        // 0x10 (ApplicationContext) is a recognized AssociateItemType but is not valid as a
+        // syntax sub-item; the loop must return UnexpectedItemType rather than silently skipping
+        let syntax_len = 17u16; // "1.2.840.10008.1.1"
+        let item_length = 4u16 + 4 + syntax_len;
+
+        let mut data = vec![0x20, 0x00];
+        data.extend_from_slice(&item_length.to_be_bytes());
+        data.extend_from_slice(&[0x01, 0x00, 0xFF, 0x00]);
+        data.push(0x10); // ApplicationContext — recognized but unexpected as a syntax sub-item
+        data.push(0x00);
+        data.extend_from_slice(&syntax_len.to_be_bytes());
+        data.extend_from_slice(b"1.2.840.10008.1.1");
+
+        assert!(matches!(
+            deserialize_presentation_context_item(&mut Cursor::new(data)),
+            Err(PduDeserializationError::UnexpectedItemType(
+                AssociateItemType::ApplicationContext
+            ))
+        ));
+    }
+
+    #[test]
+    fn test_deserialize_invalid_utf8_in_transfer_syntax_returns_error() {
+        // Non-UTF-8 bytes inside a transfer syntax string must surface as InvalidEncoding
+        let invalid_utf8: &[u8] = &[0xFF, 0xFE, 0xFD];
+        let ts_len = invalid_utf8.len() as u16;
+        let item_length = 4u16 + 4 + ts_len;
+
+        let mut data = vec![0x21, 0x00]; // PresentationContextAc
+        data.extend_from_slice(&item_length.to_be_bytes());
+        data.extend_from_slice(&[0x01, 0x00, 0x00, 0x00]); // context_id, pad, Acceptance, pad
+        data.push(0x40); // TransferSyntax
+        data.push(0x00);
+        data.extend_from_slice(&ts_len.to_be_bytes());
+        data.extend_from_slice(invalid_utf8);
+
+        assert!(matches!(
+            deserialize_presentation_context_item(&mut Cursor::new(data)),
+            Err(PduDeserializationError::InvalidEncoding(_))
+        ));
+    }
+
+    #[test]
+    fn test_deserialize_rq_preserves_min_context_id() {
+        let data = rq_bytes(0x00, "1.2.840.10008.1.1", &["1.2.840.10008.1.2"]);
+        let item = deserialize_presentation_context_item(&mut Cursor::new(data)).unwrap();
+        assert_eq!(item.context_id, 0x00);
+    }
+
+    #[test]
+    fn test_deserialize_rq_roundtrip_with_serialize() {
+        let original = PresentationContextItem::new(
+            AssociateItemType::PresentationContextRq,
+            0x01,
+            None,
+            Some(SyntaxItem::new(AssociateItemType::AbstractSyntax, "1.2.840.10008.1.1").unwrap()),
+            vec![SyntaxItem::new(AssociateItemType::TransferSyntax, "1.2.840.10008.1.2").unwrap()],
+        )
+        .unwrap();
+
+        let serialized = serialize_presentation_context_item(&original);
+        let deserialized =
+            deserialize_presentation_context_item(&mut Cursor::new(serialized)).unwrap();
+
+        assert_eq!(original, deserialized);
+    }
+
+    #[test]
+    fn test_deserialize_ac_roundtrip_with_serialize() {
+        let original = PresentationContextItem::new(
+            AssociateItemType::PresentationContextAc,
+            0x03,
+            Some(PresentationContextResult::Acceptance),
+            None,
+            vec![SyntaxItem::new(AssociateItemType::TransferSyntax, "1.2.840.10008.1.2").unwrap()],
+        )
+        .unwrap();
+
+        let serialized = serialize_presentation_context_item(&original);
+        let deserialized =
+            deserialize_presentation_context_item(&mut Cursor::new(serialized)).unwrap();
+
+        assert_eq!(original, deserialized);
+    }
 }

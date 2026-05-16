@@ -165,6 +165,10 @@ pub fn serialize_sub_item(item: &UserInformationSubItem) -> Vec<u8> {
     pdu
 }
 
+/// Deserializes bytes from a [Read] into a [UserInformationSubItem].
+///
+/// # Errors
+/// - [`PduDeserializationError::InvalidLength`] if the reader does not contain enough bytes.
 pub fn deserialize_sub_item<T: Read>(reader: &mut T) -> Result<UserInformationSubItem, PduDeserializationError> {
     let mut pdu_type = [0u8; PDU_TYPE_LENGTH];
     reader.read_exact(&mut pdu_type)?;

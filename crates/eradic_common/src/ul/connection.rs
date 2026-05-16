@@ -48,7 +48,7 @@ impl UpperLayerConnection {
         }
     }
 
-    /// Creates a connection that starts from Sta4.
+    /// Creates a connection that starts from Sta5.
     pub fn new_client(
         called_address: IpAddr,
         called_port: u16,
