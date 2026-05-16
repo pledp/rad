@@ -119,6 +119,7 @@ where
             DeserializedPdu::AssociateRequest(deserialize_associate_pdu(reader)?)
         }
         PduType::Abort => DeserializedPdu::Abort(deserialize_abort_pdu(reader)?),
+        PduType::AssociateAccept => DeserializedPdu::AssociateAccept(deserialize_associate_pdu(reader)?),
         _ => todo!(),
     })
 }

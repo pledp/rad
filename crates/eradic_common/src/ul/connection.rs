@@ -1,12 +1,17 @@
 use std::net::IpAddr;
+use log::info;
+use thiserror::Error;
 
-use crate::{
-    ul::associate::abort::{AbortReason, AbortSource}, ul::event::{Command, Event}, ul::service::{AbortIndication, AssociateRequestIndication, ProviderAbortIndication}
-};
+use crate::ul::{associate::{AssociateRqAcPdu, AssociateRqAcPduError, PduDeserializationError, abort::{AbortReason, AbortSource}}, event::{Command, Event}, service::{AbortIndication, AssociateRequestIndication, ProviderAbortIndication}};
 
-use crate::Result;
+#[derive(Debug, Error)]
+pub enum UpperLayerConnectionError {
+    #[error(transparent)]
+    AssociateRqAcFromError(#[from] AssociateRqAcPduError)
+}
 
-#[derive(Clone, Copy, PartialEq)]
+
+#[derive(Clone, Copy, PartialEq, Debug)]
 pub enum UpperLayerConnectionState {
     /// Sta1
     Idle,
@@ -26,19 +31,15 @@ pub enum UpperLayerConnectionState {
 /// depending on performed actions.
 ///
 /// See [DICOM standard part 8](https://dicom.nema.org/medical/dicom/current/output/html/part08).
-#[derive(Clone)]
-pub struct UpperLayerAcceptorConnection {
+#[derive(Clone, Debug)]
+pub struct UpperLayerConnection {
     state: UpperLayerConnectionState,
     called_address: Option<String>,
     calling_address: Option<String>,
 }
 
-// TODO: Remove new_client, create UpperLayerRequestorConnection, remove Option<>
-impl UpperLayerAcceptorConnection {
-    pub fn new_client() -> Self {
-        Self::new_no_assoc()
-    }
-
+impl UpperLayerConnection {
+    /// Creates a connection from Sta1. From Sta1 connection may become acceptor or requestor.
     pub fn new_no_assoc() -> Self {
         Self {
             state: UpperLayerConnectionState::Idle,
@@ -47,6 +48,21 @@ impl UpperLayerAcceptorConnection {
         }
     }
 
+    /// Creates a connection that starts from Sta4.
+    pub fn new_client(
+        called_address: IpAddr,
+        called_port: u16,
+        calling_address: IpAddr,
+        calling_port: u16
+    ) -> Self {
+        Self {
+            state: UpperLayerConnectionState::WaitingForAcRjPdu,
+            called_address: Some(format_presentation_address(called_address, called_port)),
+            calling_address: Some(format_presentation_address(calling_address, calling_port)),
+        }
+    }
+
+    /// Creates a connection that starts from Sta2.
     pub fn new_server(
         called_address: IpAddr,
         called_port: u16,
@@ -59,102 +75,70 @@ impl UpperLayerAcceptorConnection {
             calling_address: Some(format_presentation_address(calling_address, calling_port)),
         }
     }
-}
 
-/// DICOM state machine command dispatched given an [`Event`].
-///
-/// See [DICOM standard part 8 chapter 9.2](https://dicom.nema.org/medical/dicom/current/output/html/part08.html#chapter_8)
-pub fn handle_server_event(
-    conn: UpperLayerAcceptorConnection,
-    event: Event,
-) -> Result<(Option<Command>, UpperLayerAcceptorConnection)> {
-    let mut new_state = conn;
+    /// DICOM state machine command dispatched given an [`Event`].
+    ///
+    /// See [DICOM standard part 8 chapter 9.2](https://dicom.nema.org/medical/dicom/current/output/html/part08.html#chapter_8)
+    pub fn handle_event(
+        &mut self,
+        event: Event,
+    ) -> Result<Option<Command>, UpperLayerConnectionError> {
+        let command = match (event, self.state) {
+            (Event::TransportConnectionIndication, _) => {
+                self.state = UpperLayerConnectionState::WaitingForRequestPdu;
+                None
+            }
 
-    let command = match (event, new_state.state) {
-        (Event::TransportConnectionIndication, _) => {
-            new_state.state = UpperLayerConnectionState::WaitingForRequestPdu;
-            None
-        }
+           (Event::AssociateRequestPdu(pdu), _) => {
+                self.state = UpperLayerConnectionState::WaitingForResponsePrimitive;
 
-       (Event::AssociateRequestPdu(pdu), _) => {
-            new_state.state = UpperLayerConnectionState::WaitingForResponsePrimitive;
+                let indication = AssociateRequestIndication::from_rq_pdu(
+                    pdu,
+                    self.called_address.clone().unwrap(),
+                    self.calling_address.clone().unwrap(),
+                );
 
-            let indication = AssociateRequestIndication::from_rq_pdu(
-                pdu,
-                new_state.called_address.clone().unwrap(),
-                new_state.calling_address.clone().unwrap(),
-            );
+                Some(Command::AssociateIndication(indication))
+            }
 
-            Some(Command::AssociateIndication(indication))
-        }
+            (Event::AssociateResponsePrimitiveAccept(prim), _) => {
+                self.state = UpperLayerConnectionState::DataTransfer;
 
-        (Event::AssociateResponsePrimitiveAccept(prim), _) => {
-            new_state.state = UpperLayerConnectionState::DataTransfer;
 
-            Some(Command::AssociateAcceptPdu(prim))
-        }
+                Some(Command::AssociateAcceptPdu(AssociateRqAcPdu::try_from(prim)?))
+            }
 
-        (Event::AssociateAbortPdu(pdu), _) => {
-            new_state.state = UpperLayerConnectionState::Idle;
+            (Event::AssociateAbortPdu(pdu), _) => {
+                self.state = UpperLayerConnectionState::Idle;
 
-            Some(Command::AbortIndication(AbortIndication::from_pdu(pdu)))
-        }
+                Some(Command::AbortIndication(AbortIndication::from_pdu(pdu)))
+            }
 
-        (Event::TransportConnectionClosedIndication, state)
-            if state != UpperLayerConnectionState::Idle =>
-        {
-            new_state.state = UpperLayerConnectionState::Idle;
+            (Event::TransportConnectionClosedIndication, state)
+                if state != UpperLayerConnectionState::Idle =>
+            {
+                self.state = UpperLayerConnectionState::Idle;
 
-            Some(Command::ProviderAbortIndication(ProviderAbortIndication::new(
-                AbortReason::NoReason
-            )))
-        }
+                Some(Command::ProviderAbortIndication(ProviderAbortIndication::new(
+                    AbortReason::NoReason
+                )))
+            }
 
-        _ => {
-            None
-        }
-    };
+            (Event::AssociateAcceptPdu(pdu), _) => {
+                self.state = UpperLayerConnectionState::DataTransfer;
 
-    Ok((command, new_state))
-}
+                info!("Accepted association");
 
-pub fn handle_client_event(
-    conn: UpperLayerRequestorConnection,
-    event: Event,
-) -> Result<(Option<Command>, UpperLayerRequestorConnection)> {
-    let mut new_state = conn;
+                None
+            }
 
-    let command = match event {
-        Event::ConnectionOpen => {
-            new_state.state = UpperLayerConnectionState::WaitingForAcRjPdu;
+            _ => {
+                todo!()
+            }
+        };
 
-            Some(Command::AssociateRequestPdu)
-        }
-
-        _ => {
-            todo!()
-        }
-    };
-
-    Ok((command, new_state))
-}
-
-/// DICOM upper layer Acceptor connection.
-/// The DICOM standard defines different states for the system. Different states transition differently
-/// depending on performed actions.
-///
-/// See [DICOM standard part 8](https://dicom.nema.org/medical/dicom/current/output/html/part08).
-pub struct UpperLayerRequestorConnection {
-    state: UpperLayerConnectionState,
-}
-
-impl UpperLayerRequestorConnection {
-    pub fn new_client() -> Self {
-        Self {
-            state: UpperLayerConnectionState::WaitingForOpenConnection,
-        }
+        Ok(command)
     }
-
 }
 
 pub fn format_presentation_address(called_address: IpAddr, called_port: u16) -> String {

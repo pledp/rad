@@ -19,6 +19,7 @@ use crate::ul::associate::{
     presentation_context::{PresentationContextItem, PresentationContextItemBuilder},
 };
 use crate::ul::associate::{PduDeserializationError, presentation_context};
+use crate::ul::service::AssociateRequestIndication;
 
 /// Length of the Protocol Version field in a A-ASSOCIATE-RQ or A-ASSOCIATE-AC PDU
 const PROTOCOL_VERSION_LENGTH: usize = 2;

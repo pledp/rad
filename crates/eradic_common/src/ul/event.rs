@@ -14,9 +14,9 @@ pub enum Event {
     TransportConnectionIndication,
     ConnectionOpen,
     AssociateRequestPdu(AssociateRqAcPdu),
-    DataPdu,
     AssociateRejectPdu,
-    AssociateAcceptPdu,
+    AssociateAcceptPdu(AssociateRqAcPdu),
+    DataPdu,
     AssociateAbortPdu(AssociateAbortPdu),
     AssociateRequestPrimitive(AssociateRequestIndication),
     AssociateResponsePrimitiveReject(RejectedAssociateRequestResponse),
@@ -24,14 +24,15 @@ pub enum Event {
     TransportConnectionClosedIndication
 }
 
+/// Commands that the system should perform. Typically spawned in the case of an [Event].
 #[derive(IntoStaticStr, Display, Debug)]
 pub enum Command {
     AssociateIndication(AssociateRequestIndication),
     AbortIndication(AbortIndication),
     ProviderAbortIndication(ProviderAbortIndication),
     AssociateResponse(RejectedAssociateRequestResponse),
-    AssociateAcceptPdu(AcceptedAssociateRequestResponse),
-    AssociateRequestPdu,
+    AssociateAcceptPdu(AssociateRqAcPdu),
+    AssociateRequestPdu(AssociateRqAcPdu),
     AbortPdu,
     OpenConnection,
 }
@@ -71,6 +72,7 @@ pub fn event_from_deserialized_pdu(pdu: DeserializedPdu) -> Event {
     match pdu {
         DeserializedPdu::AssociateRequest(inner) => Event::AssociateRequestPdu(inner),
         DeserializedPdu::Abort(inner) => Event::AssociateAbortPdu(inner),
+        DeserializedPdu::AssociateAccept(inner) => Event::AssociateAcceptPdu(inner),
         _ => todo!()
     }
 }

@@ -19,7 +19,7 @@ use tracing::{Level, info};
 use tracing_subscriber::{fmt, layer::SubscriberExt, util::SubscriberInitExt};
 
 use eradic::ul::event::Indication;
-use eradic_ul_tokio::handle_client;
+use eradic_ul_tokio::{acceptor_handle_client};
 
 use crate::service_user::LocalUpperLayerServiceUser;
 
@@ -65,7 +65,7 @@ async fn main() -> Result<()> {
 
             client_count_clone.fetch_add(1, Ordering::AcqRel);
 
-            let result = handle_client(tcp, socket_addr, scu_handler).await;
+            let result = acceptor_handle_client(tcp, socket_addr, scu_handler).await;
 
             client_count_clone.fetch_sub(1, Ordering::AcqRel);
 
@@ -103,7 +103,7 @@ pub fn init_telemetry() -> Result<SdkTracerProvider> {
 
     tracing_subscriber::registry()
         .with(tracing_subscriber::EnvFilter::new(
-            "off,server=debug,eradic_ul=debug,opentelemetry_sdk=error,opentelemetry_otlp=error,tonic=error,tower=off,hyper_util=off,h2=off,tracing_loki=error"
+            "off,server=debug,eradic_ul=debug"
         ))
         .with(
             fmt::layer()

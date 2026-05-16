@@ -1,6 +1,7 @@
 use std::convert::TryFrom;
 use std::io::Read;
 
+use strum_macros::IntoStaticStr;
 use thiserror::Error;
 
 use crate::ul::associate::{AssociateRqAcPdu, PduDeserializationError};
@@ -16,6 +17,7 @@ pub const PDU_HEADER_LENGTH: usize = 6;
 
 const APPLICATION_CONTEXT_NAME: &'static str = "1.2.840.10008.3.1.1.1";
 
+#[derive(Debug, IntoStaticStr)]
 pub enum DeserializedPdu {
     AssociateRequest(AssociateRqAcPdu),
     AssociateAccept(AssociateRqAcPdu),

@@ -98,6 +98,7 @@ impl PresentationContextItem {
         }
     }
 
+    /// The total length of the resulting item. The total length is a superset of [PresentationContextItem::length].
     pub fn item_length(&self) -> u32 {
         // Length field does not include first 4 bytes of item
         const PRESENTATION_ITEM_INCLUSIVE_LENGTH: u16 = 4;
