@@ -443,7 +443,7 @@ mod tests {
 
         assert!(matches!(
             deserialize_presentation_context_item(&mut Cursor::new(data)),
-            Err(PduDeserializationError::UnknownItemType(0xFF))
+            Err(PduDeserializationError::UnrecognizedItemType(0xFF))
         ));
     }
 
@@ -509,7 +509,7 @@ mod tests {
 
         assert!(matches!(
             deserialize_presentation_context_item(&mut Cursor::new(data)),
-            Err(PduDeserializationError::UnknownItemType(0xFF))
+            Err(PduDeserializationError::UnrecognizedItemType(0xFF))
         ));
     }
 

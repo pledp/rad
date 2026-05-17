@@ -21,9 +21,6 @@ use crate::ul::associate::{
 use crate::ul::associate::{PduDeserializationError, presentation_context};
 use crate::ul::service::AssociateRequestIndication;
 
-/// Length of the Protocol Version field in a A-ASSOCIATE-RQ or A-ASSOCIATE-AC PDU
-const PROTOCOL_VERSION_LENGTH: usize = 2;
-
 /// Length of the Called-AE and Calling-AE fields in a A-ASSOCIATE-RQ or A-ASSOCIATE-AC PDU
 const AE_LENGTH: usize = 16;
 
@@ -53,6 +50,53 @@ pub struct AssociateRqAcPdu {
 }
 
 impl AssociateRqAcPdu {
+    pub fn new_rq(
+        called_ae: impl Into<String>,
+        calling_ae: impl Into<String>,
+        application_context_item: ApplicationContextItem,
+        presentation_context_items: Vec<PresentationContextItem>,
+        user_info_item: UserInfoItem,
+    ) -> Self {
+        Self::new(PduType::AssociateRequest, called_ae, calling_ae, application_context_item, presentation_context_items, user_info_item)
+    }
+
+    pub fn new_ac(
+        called_ae: impl Into<String>,
+        calling_ae: impl Into<String>,
+        application_context_item: ApplicationContextItem,
+        presentation_context_items: Vec<PresentationContextItem>,
+        user_info_item: UserInfoItem,
+    ) -> Self {
+        Self::new(PduType::AssociateAccept, called_ae, calling_ae, application_context_item, presentation_context_items, user_info_item)
+    }
+
+    fn new(
+        pdu_type: PduType,
+        called_ae: impl Into<String>,
+        calling_ae: impl Into<String>,
+        application_context_item: ApplicationContextItem,
+        presentation_context_items: Vec<PresentationContextItem>,
+        user_info_item: UserInfoItem,
+    ) -> Self {
+        const NO_VARIABLE_FIELDS_LENGTH: u32 = 68;
+
+        let length = NO_VARIABLE_FIELDS_LENGTH
+            + application_context_item.item_length()
+            + presentation_context_items.iter().map(|i| i.item_length()).sum::<u32>()
+            + user_info_item.item_length();
+
+        Self {
+            pdu_type,
+            length,
+            protocol_version: 1,
+            called_ae: called_ae.into(),
+            calling_ae: calling_ae.into(),
+            application_context_item,
+            presentation_context_items,
+            user_info_item,
+        }
+    }
+
     pub fn pdu_type(&self) -> PduType {
         self.pdu_type
     }
@@ -120,10 +164,14 @@ pub fn serialize_associate_pdu(request: &AssociateRqAcPdu) -> Vec<u8> {
     pdu
 }
 
-/// Deserializes bytes from a [Read] into a [AssociateAbortPdu].
+/// Deserializes bytes from a [Read] into a [AssociateRqAcPdu].
 ///
 /// # Errors
+/// - [`PduDeserializationError::UnexpectedPduType`] if the PDU type is not [PduType::AssociateRequest] or [PduType::AssociateAccept].
 #[doc = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/errors/pdu_deserialize_errors.md"))]
+#[doc = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/errors/deserialize_errors.md"))]
+#[doc = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/errors/syntax_deserialize_errors.md"))]
+#[doc = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/errors/presentation_item_deserialize_errors.md"))]
 pub fn deserialize_associate_pdu<T: Read>(
     reader: &mut T,
 ) -> std::result::Result<AssociateRqAcPdu, PduDeserializationError> {
@@ -132,15 +180,18 @@ pub fn deserialize_associate_pdu<T: Read>(
     let mut pdu_type = [0u8; PDU_TYPE_LENGTH];
     reader.read_exact(&mut pdu_type)?;
 
+    let pdu_type: PduType = pdu_type[0].try_into()?;
+    if pdu_type != PduType::AssociateRequest && pdu_type != PduType::AssociateAccept {
+        return Err(PduDeserializationError::UnexpectedPduType(pdu_type));
+    }
+
     read_padding(&mut reader, 1);
 
     let mut pdu_length = [0u8; PDU_LENGTH_LENGTH];
     reader.read_exact(&mut pdu_length)?;
 
-    let mut protocol_version = [0u8; PROTOCOL_VERSION_LENGTH];
-    reader.read_exact(&mut protocol_version)?;
-
-    read_padding(&mut reader, 2);
+    // protocol version (2) + reserved (2)
+    read_padding(&mut reader, 4);
 
     let mut called_ae = [0u8; AE_LENGTH];
     reader.read_exact(&mut called_ae)?;
@@ -176,16 +227,18 @@ pub fn deserialize_associate_pdu<T: Read>(
         }
     }
 
-    Ok(AssociateRqAcPdu {
-        pdu_type: pdu_type[0].try_into()?,
-        length: u32::from_be_bytes(pdu_length),
-        protocol_version: u16::from_be_bytes(protocol_version),
-        called_ae: String::from_utf8(called_ae.trim_ascii().to_vec())?,
-        calling_ae: String::from_utf8(calling_ae.trim_ascii().to_vec())?,
-        application_context_item: application_context_item.unwrap(),
-        presentation_context_items,
-        user_info_item: user_info_item.unwrap(),
-    })
+    let called_ae = String::from_utf8(called_ae.trim_ascii().to_vec())?;
+    let calling_ae = String::from_utf8(calling_ae.trim_ascii().to_vec())?;
+    let application_context_item = application_context_item.unwrap();
+    let user_info_item = user_info_item.unwrap();
+
+    let pdu = match pdu_type {
+        PduType::AssociateRequest => AssociateRqAcPdu::new_rq(called_ae, calling_ae, application_context_item, presentation_context_items, user_info_item),
+        PduType::AssociateAccept => AssociateRqAcPdu::new_ac(called_ae, calling_ae, application_context_item, presentation_context_items, user_info_item),
+        _ => unreachable!(),
+    };
+
+    Ok(pdu)
 }
 
 // TODO: item_type struct

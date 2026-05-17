@@ -2,7 +2,7 @@ use std::net::IpAddr;
 use log::info;
 use thiserror::Error;
 
-use crate::ul::{associate::{AssociateRqAcPdu, AssociateRqAcPduError, PduDeserializationError, abort::{AbortReason, AbortSource}}, event::{Command, Event}, service::{AbortIndication, AssociateRequestIndication, ProviderAbortIndication}};
+use crate::ul::{associate::{AssociateRqAcPdu, AssociateRqAcPduError, PduDeserializationError, abort::{AbortReason, AbortSource, AssociateAbortPdu}}, event::{Command, Event}, service::{AbortIndication, AssociateRequestIndication, ProviderAbortIndication}};
 
 #[derive(Debug, Error)]
 pub enum UpperLayerConnectionError {
@@ -23,6 +23,11 @@ pub enum UpperLayerConnectionState {
     WaitingForAcRjPdu,
     WaitingForResponsePrimitive,
     DataTransfer,
+
+    /// DICOM UL State machine State 13 - Waiting for TCP connection to close.
+    ///
+    /// It is not required to transistion from State 13 to State 1 if the connection going out
+    /// of scope implicitly indicates a transistion from State 13 to State 1.
     WaitForTcpClose,
 }
 
@@ -82,11 +87,11 @@ impl UpperLayerConnection {
     pub fn handle_event(
         &mut self,
         event: Event,
-    ) -> Result<Option<Command>, UpperLayerConnectionError> {
-        let command = match (event, self.state) {
+    ) -> Result<Vec<Command>, UpperLayerConnectionError> {
+        let commands = match (event, self.state) {
             (Event::TransportConnectionIndication, _) => {
                 self.state = UpperLayerConnectionState::WaitingForRequestPdu;
-                None
+                vec![]
             }
 
            (Event::AssociateRequestPdu(pdu), _) => {
@@ -98,20 +103,19 @@ impl UpperLayerConnection {
                     self.calling_address.clone().unwrap(),
                 );
 
-                Some(Command::AssociateIndication(indication))
+                vec![Command::AssociateIndication(indication)]
             }
 
             (Event::AssociateResponsePrimitiveAccept(prim), _) => {
                 self.state = UpperLayerConnectionState::DataTransfer;
 
-
-                Some(Command::AssociateAcceptPdu(AssociateRqAcPdu::try_from(prim)?))
+                vec![Command::AssociateAcceptPdu(AssociateRqAcPdu::try_from(prim)?)]
             }
 
             (Event::AssociateAbortPdu(pdu), _) => {
                 self.state = UpperLayerConnectionState::Idle;
 
-                Some(Command::AbortIndication(AbortIndication::from_pdu(pdu)))
+                vec![Command::AbortIndication(AbortIndication::from_pdu(pdu))]
             }
 
             (Event::TransportConnectionClosedIndication, state)
@@ -119,26 +123,72 @@ impl UpperLayerConnection {
             {
                 self.state = UpperLayerConnectionState::Idle;
 
-                Some(Command::ProviderAbortIndication(ProviderAbortIndication::new(
+                vec![Command::ProviderAbortIndication(ProviderAbortIndication::new(
                     AbortReason::NoReason
-                )))
+                ))]
             }
 
-            (Event::AssociateAcceptPdu(pdu), _) => {
+            (Event::AssociateAcceptPdu(_pdu), _) => {
                 self.state = UpperLayerConnectionState::DataTransfer;
 
                 info!("Accepted association");
 
-                None
+                vec![]
+            }
+
+            (Event::UnrecognizedPdu, _) => {
+                let commands = unrecognized_or_invalid_pdu(&self.state, AbortReason::UnrecognizedPdu);
+                self.state = UpperLayerConnectionState::WaitForTcpClose;
+
+                commands
             }
 
             _ => {
-                todo!()
+                let commands = unrecognized_or_invalid_pdu(&self.state, AbortReason::UnexpectedPdu);
+                self.state = UpperLayerConnectionState::WaitForTcpClose;
+
+                commands
             }
         };
 
-        Ok(command)
+        Ok(commands)
     }
+}
+
+fn unrecognized_or_invalid_pdu(state: &UpperLayerConnectionState, reason: AbortReason) -> Vec<Command> {
+    let commands = match state {
+        UpperLayerConnectionState::WaitingForRequestPdu => {
+            vec![
+                Command::AbortPdu(AssociateAbortPdu::new(
+                    AbortSource::ServiceUser,
+                    reason
+                )),
+                Command::StartArtimTimer
+            ]
+        }
+        UpperLayerConnectionState::WaitForTcpClose => {
+            vec![
+                Command::AbortPdu(AssociateAbortPdu::new(
+                    AbortSource::ServiceUser,
+                    reason
+                )),
+            ]
+        }
+        _ => {
+            vec![
+                Command::AbortPdu(AssociateAbortPdu::new(
+                    AbortSource::ServiceUser,
+                    reason
+                )),
+                Command::StartArtimTimer,
+                Command::ProviderAbortIndication(ProviderAbortIndication::new(
+                    reason
+                ))
+            ]
+        }
+    };
+
+    commands
 }
 
 pub fn format_presentation_address(called_address: IpAddr, called_port: u16) -> String {

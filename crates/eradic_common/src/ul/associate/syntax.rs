@@ -180,7 +180,7 @@ mod tests {
 
         assert!(matches!(
             deserialize_syntax_item(&mut data),
-            Err(PduDeserializationError::UnknownItemType(_))
+            Err(PduDeserializationError::UnrecognizedItemType(_))
         ));
     }
 

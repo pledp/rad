@@ -48,7 +48,7 @@ impl TryFrom<u8> for PduType {
             0x05 => Ok(PduType::ReleaseRequest),
             0x06 => Ok(PduType::ReleaseResponse),
             0x07 => Ok(PduType::Abort),
-            _ => Err(PduDeserializationError::InvalidPduType(value)),
+            _ => Err(PduDeserializationError::UnrecognizedPduType(value)),
         }
     }
 }

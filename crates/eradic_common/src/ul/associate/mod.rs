@@ -67,7 +67,7 @@ impl TryFrom<u8> for AssociateItemType {
             0x30 => Ok(AssociateItemType::AbstractSyntax),
             0x40 => Ok(AssociateItemType::TransferSyntax),
             0x50 => Ok(AssociateItemType::UserInformation),
-            _ => Err(PduDeserializationError::UnknownItemType(value)),
+            _ => Err(PduDeserializationError::UnrecognizedItemType(value)),
         }
     }
 }
@@ -87,27 +87,29 @@ impl From<AssociateItemType> for u8 {
 
 #[derive(Debug, Error)]
 pub enum PduDeserializationError {
+    // Unrecognized errors
     #[error("Item type does not exist: {0}")]
-    UnknownItemType(u8),
+    UnrecognizedItemType(u8),
+    #[error("Invalid PDU type: {0}")]
+    UnrecognizedPduType(u8),
+
+    // Unexpected errors
     #[error("Item type unexpected: {0}")]
     UnexpectedItemType(AssociateItemType),
+    #[error("Unexpected PDU type: {0:?}")]
+    UnexpectedPduType(PduType),
 
+    // Invalid errors
     #[error(transparent)]
     InvalidSyntaxItem(#[from] SyntaxItemError),
     #[error(transparent)]
     InvalidPresentationItem(#[from] PresentationContextError),
-
+    #[error(transparent)]
+    InvalidAbortPdu(#[from] abort::AbortParseError),
     #[error(transparent)]
     InvalidLength(#[from] std::io::Error),
     #[error(transparent)]
     InvalidEncoding(#[from] std::string::FromUtf8Error),
-    #[error(transparent)]
-    InvalidAbortPdu(#[from] abort::AbortParseError),
-
-    #[error("Invalid PDU type: {0}")]
-    InvalidPduType(u8),
-    #[error("Unexpected PDU type: {0:?}")]
-    UnexpectedPduType(PduType),
 }
 
 pub fn deserialized_pdu_from_reader<R>(
@@ -123,6 +125,6 @@ where
         }
         PduType::Abort => DeserializedPdu::Abort(deserialize_abort_pdu(reader)?),
         PduType::AssociateAccept => DeserializedPdu::AssociateAccept(deserialize_associate_pdu(reader)?),
-        _ => todo!(),
+        _ => todo!()
     })
 }

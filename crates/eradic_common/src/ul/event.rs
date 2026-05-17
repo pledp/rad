@@ -21,7 +21,14 @@ pub enum Event {
     AssociateRequestPrimitive(AssociateRequestIndication),
     AssociateResponsePrimitiveReject(RejectedAssociateRequestResponse),
     AssociateResponsePrimitiveAccept(AcceptedAssociateRequestResponse),
-    TransportConnectionClosedIndication
+    TransportConnectionClosedIndication,
+
+    // Abort events
+    UnrecognizedPdu,
+    UnexpectedPdu,
+    UnrecognizedPduParameter,
+    UnexpectedPduParameter,
+    InvalidPduParameter
 }
 
 /// Commands that the system should perform. Typically spawned in the case of an [Event].
@@ -33,7 +40,8 @@ pub enum Command {
     AssociateResponse(RejectedAssociateRequestResponse),
     AssociateAcceptPdu(AssociateRqAcPdu),
     AssociateRequestPdu(AssociateRqAcPdu),
-    AbortPdu,
+    AbortPdu(AssociateAbortPdu),
+    StartArtimTimer,
     OpenConnection,
 }
 

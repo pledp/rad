@@ -3,9 +3,9 @@ use std::io::Cursor;
 
 use eradic_common::DeserializedPdu;
 use eradic_common::ul::associate::abort::serialize_abort_pdu;
-use eradic_common::ul::associate::{AssociateRqAcPdu, deserialized_pdu_from_reader, serialize_associate_pdu};
+use eradic_common::ul::associate::{PduDeserializationError, deserialized_pdu_from_reader, serialize_associate_pdu};
 use eradic_common::ul::pdu::{PDU_HEADER_LENGTH, PduType, read_pdu_header};
-use eradic_common::ul::service::AssociateRequestResponse;
+use thiserror::Error;
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use tokio::{
     net::TcpStream,
@@ -57,7 +57,7 @@ where
 
     set.spawn(handle_command_task(writer, command_rx, user_tx));
 
-    set.spawn(pdu_read_task(reader, event_tx.clone()));
+    set.spawn(pdu_read_task(reader, event_tx));
 
     for cmd in initial_commands {
         println!("{}", cmd);
@@ -107,6 +107,86 @@ where
 }
 
 #[instrument(skip_all)]
+async fn pdu_read_task<R>(mut reader: R, event_tx: mpsc::Sender<Event>) -> Result<(), HandleClientError>
+where
+    R: AsyncRead + Unpin,
+{
+    loop {
+        let (buf, pdu_type) = match read_full_pdu(&mut reader).await {
+            Ok(val) => val,
+            Err(ReadPduError::DeserializeError(e)) => {
+                event_tx
+                    .send(Event::UnrecognizedPdu)
+                    .await;
+
+                return Err(HandleClientError::PduDeserializationError(e));
+            }
+            Err(ReadPduError::Io(e)) => {
+                event_tx
+                    .send(Event::TransportConnectionClosedIndication)
+                    .await;
+
+                return Err(HandleClientError::Io(e));
+            }
+        };
+        info!("PDU received: {:?}", pdu_type);
+
+        match deserialized_pdu_from_reader(&mut Cursor::new(buf), pdu_type) {
+            Ok(pdu) => {
+                event_tx.send(event_from_deserialized_pdu(pdu)).await;
+            }
+            Err(PduDeserializationError::UnrecognizedItemType(item_type)) => {
+                event_tx
+                    .send(Event::UnrecognizedPduParameter)
+                    .await;
+
+                return Err(HandleClientError::PduDeserializationError(
+                    PduDeserializationError::UnrecognizedItemType(item_type)
+                ));
+            }
+
+            Err(PduDeserializationError::UnexpectedItemType(item_type)) => {
+                event_tx
+                    .send(Event::UnexpectedPduParameter)
+                    .await;
+
+                return Err(HandleClientError::PduDeserializationError(
+                    PduDeserializationError::UnexpectedItemType(item_type)
+                ));
+            }
+
+            Err(e) => {
+                event_tx
+                    .send(Event::InvalidPduParameter)
+                    .await;
+
+                return Err(HandleClientError::PduDeserializationError(e));
+            }
+        }
+    }
+}
+
+#[instrument(skip_all)]
+async fn handle_event_task(
+    mut event_rx: mpsc::Receiver<Event>,
+    command_tx: mpsc::Sender<Command>,
+    mut conn: UpperLayerConnection,
+) -> Result<(), HandleClientError> {
+    while let Some(event) = event_rx.recv().await {
+        info!("Event received");
+
+        let commands = conn.handle_event(event).unwrap();
+
+        for cmd in commands {
+            command_tx.send(cmd).await;
+        }
+    }
+
+    info!("Exiting");
+    Ok(())
+}
+
+#[instrument(skip_all)]
 async fn handle_command_task<W>(
     mut writer: W,
     mut rx: mpsc::Receiver<Command>,
@@ -119,7 +199,7 @@ where
         match command {
             // Acceptor commands
             Command::AssociateAcceptPdu(pdu) => {
-                write_stream_pdu(DeserializedPdu::AssociateAccept(pdu), &mut writer).await;
+                stream_write_pdu(DeserializedPdu::AssociateAccept(pdu), &mut writer).await;
             }
 
             Command::AssociateIndication(indication) => {
@@ -130,7 +210,7 @@ where
 
             // Requestor commands
             Command::AssociateRequestPdu(pdu) => {
-                write_stream_pdu(DeserializedPdu::AssociateRequest(pdu), &mut writer).await;
+                stream_write_pdu(DeserializedPdu::AssociateRequest(pdu), &mut writer).await;
             }
 
             // Acceptor and Requestor commands
@@ -157,53 +237,16 @@ where
     Ok(())
 }
 
-#[instrument(skip_all)]
-async fn pdu_read_task<R>(mut reader: R, event_tx: mpsc::Sender<Event>) -> Result<(), HandleClientError>
-where
-    R: AsyncRead + Unpin,
-{
-    loop {
-        let (buf, pdu_type) = match read_full_pdu(&mut reader).await {
-            Ok(val) => val,
-            Err(e) => {
-                event_tx
-                    .send(Event::TransportConnectionClosedIndication)
-                    .await;
-                return Err(e);
-            }
-        };
-        info!("PDU received: {:?}", pdu_type);
-        event_tx
-            .send(event_from_deserialized_pdu(deserialized_pdu_from_reader(
-                &mut Cursor::new(buf),
-                pdu_type,
-            )?))
-            .await;
-    }
+#[derive(Debug, Error)]
+pub enum ReadPduError {
+    #[error(transparent)]
+    Io(#[from] std::io::Error),
+    #[error(transparent)]
+    DeserializeError(#[from] PduDeserializationError)
 }
 
 #[instrument(skip_all)]
-async fn handle_event_task(
-    mut event_rx: mpsc::Receiver<Event>,
-    command_tx: mpsc::Sender<Command>,
-    mut conn: UpperLayerConnection,
-) -> Result<(), HandleClientError> {
-    while let Some(event) = event_rx.recv().await {
-        info!("Event received");
-
-        let command = conn.handle_event(event).unwrap();
-
-        if let Some(cmd) = command {
-            command_tx.send(cmd).await;
-        }
-    }
-
-    info!("Exiting");
-    Ok(())
-}
-
-#[instrument(skip_all)]
-async fn read_full_pdu<R>(reader: &mut R) -> Result<(Vec<u8>, PduType), HandleClientError>
+async fn read_full_pdu<R>(reader: &mut R) -> Result<(Vec<u8>, PduType), ReadPduError>
 where
     R: AsyncRead + Unpin,
 {
@@ -223,7 +266,7 @@ where
 }
 
 #[instrument(skip_all)]
-async fn write_stream_pdu<W>(response: DeserializedPdu, tcp: &mut W)
+async fn stream_write_pdu<W>(response: DeserializedPdu, tcp: &mut W)
 where
     W: AsyncWrite + Unpin,
 {

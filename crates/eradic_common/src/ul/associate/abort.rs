@@ -192,7 +192,7 @@ mod tests {
 
         assert!(matches!(
             result,
-            Err(PduDeserializationError::InvalidPduType(0xFF))
+            Err(PduDeserializationError::UnrecognizedPduType(0xFF))
         ));
     }
 

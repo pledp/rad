@@ -15,7 +15,6 @@ use crate::ul::associate::{
 use crate::ul::associate::{
     AssociateRqAcPdu, UserInformation, presentation_context::PresentationContextItem,
 };
-use crate::ul::pdu::PduType;
 
 /// DICOM ISO/TR 8509 request and indication primitive. Request and indication contain the same fields.
 ///
@@ -297,12 +296,6 @@ impl TryFrom<AssociateRequestIndication> for AssociateRqAcPdu {
     type Error = PduDeserializationError;
 
     fn try_from(indication: AssociateRequestIndication) -> Result<Self, Self::Error> {
-        const NO_VARIABLE_FIELDS_LENGTH: u32 = 68;
-        let mut length = NO_VARIABLE_FIELDS_LENGTH;
-
-        let application_context_item = ApplicationContextItem::new(&indication.context_name);
-        length += application_context_item.item_length();
-
         let mut presentation_context_items = Vec::new();
 
         for context in indication.presentation_context() {
@@ -324,30 +317,17 @@ impl TryFrom<AssociateRequestIndication> for AssociateRqAcPdu {
             presentation_context_items.push(builder.build()?);
         }
 
-        length += presentation_context_items
-            .iter()
-            .map(|item| item.item_length())
-            .sum::<u32>();
+        let user_info_item = UserInfoItem::new(
+            indication.user_information().iter().map(|ui| UserInformationSubItem::new(*ui)).collect()
+        );
 
-        let user_info_sub_items = indication
-            .user_information()
-            .iter()
-            .map(|ui| UserInformationSubItem::new(*ui))
-            .collect();
-
-        let user_info_item = UserInfoItem::new(user_info_sub_items);
-        length += user_info_item.item_length();
-
-        Ok(Self {
-            pdu_type: PduType::AssociateRequest,
-            length,
-            protocol_version: 1,
-            called_ae: indication.called_ae.clone(),
-            calling_ae: indication.calling_ae.clone(),
-            application_context_item,
+        Ok(Self::new_rq(
+            &indication.called_ae,
+            &indication.calling_ae,
+            ApplicationContextItem::new(&indication.context_name),
             presentation_context_items,
             user_info_item,
-        })
+        ))
     }
 }
 
@@ -355,12 +335,6 @@ impl TryFrom<AcceptedAssociateRequestResponse> for AssociateRqAcPdu {
     type Error = AssociateRqAcPduError;
 
     fn try_from(response: AcceptedAssociateRequestResponse) -> Result<Self, Self::Error> {
-        const NO_VARIABLE_FIELDS_LENGTH: u32 = 68;
-        let mut length = NO_VARIABLE_FIELDS_LENGTH;
-
-        let application_context_item = ApplicationContextItem::new(&response.context_name);
-        length += application_context_item.item_length();
-
         let mut presentation_context_items = Vec::new();
 
         for context in response.presentation_context_result() {
@@ -377,30 +351,17 @@ impl TryFrom<AcceptedAssociateRequestResponse> for AssociateRqAcPdu {
             );
         }
 
-        length += presentation_context_items
-            .iter()
-            .map(|item| item.item_length())
-            .sum::<u32>();
+        let user_info_item = UserInfoItem::new(
+            response.user_information().iter().map(|ui| UserInformationSubItem::new(*ui)).collect()
+        );
 
-        let user_info_sub_items = response
-            .user_information()
-            .iter()
-            .map(|ui| UserInformationSubItem::new(*ui))
-            .collect();
-
-        let user_info_item = UserInfoItem::new(user_info_sub_items);
-        length += user_info_item.item_length();
-
-        Ok(Self {
-            pdu_type: PduType::AssociateAccept,
-            length,
-            protocol_version: 1,
-            called_ae: response.called_ae.clone(),
-            calling_ae: response.calling_ae.clone(),
-            application_context_item,
+        Ok(Self::new_ac(
+            &response.called_ae,
+            &response.calling_ae,
+            ApplicationContextItem::new(&response.context_name),
             presentation_context_items,
             user_info_item,
-        })
+        ))
     }
 }
 
