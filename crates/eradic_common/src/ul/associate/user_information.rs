@@ -71,6 +71,7 @@ impl UserInfoItemBuilder {
     }
 }
 
+/// Serializes a [UserInfoItem] into [Vec<u8>].
 pub fn serialize_user_info_item(item: &UserInfoItem) -> Vec<u8> {
     let mut pdu: Vec<u8> = Vec::new();
 
@@ -86,6 +87,11 @@ pub fn serialize_user_info_item(item: &UserInfoItem) -> Vec<u8> {
     pdu
 }
 
+/// Deserializes bytes from a [Read] into a [UserInfoItem].
+///
+/// # Errors
+#[doc = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/errors/user_info_deserialize_errors.md"))]
+#[doc = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/errors/deserialize_errors.md"))]
 pub fn deserialize_user_info_item<T: Read>(reader: &mut T) -> Result<UserInfoItem, PduDeserializationError> {
     let mut pdu_type = [0u8; PDU_TYPE_LENGTH];
     reader.read_exact(&mut pdu_type)?;
