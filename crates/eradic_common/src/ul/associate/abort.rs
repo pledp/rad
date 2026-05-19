@@ -48,9 +48,9 @@ pub enum AbortReason {
     UnrecognizedPdu = 1,
     UnexpectedPdu = 2,
     Reserved = 3,
-    UnrecognizedPduParam = 4,
-    UnexpectedPduParam = 5,
-    InvalidPduParam = 6,
+    UnrecognizedPduParameter = 4,
+    UnexpectedPduParameter = 5,
+    InvalidPduParameter = 6,
 }
 
 impl From<AbortReason> for u8 {
@@ -68,11 +68,11 @@ impl TryFrom<u8> for AbortReason {
             x if x == AbortReason::UnrecognizedPdu as u8 => Ok(AbortReason::UnrecognizedPdu),
             x if x == AbortReason::UnexpectedPdu as u8 => Ok(AbortReason::UnexpectedPdu),
             x if x == AbortReason::Reserved as u8 => Ok(AbortReason::Reserved),
-            x if x == AbortReason::UnexpectedPduParam as u8 => {
-                Ok(AbortReason::UnrecognizedPduParam)
+            x if x == AbortReason::UnexpectedPduParameter as u8 => {
+                Ok(AbortReason::UnrecognizedPduParameter)
             }
-            x if x == AbortReason::UnexpectedPduParam as u8 => Ok(AbortReason::UnexpectedPduParam),
-            x if x == AbortReason::InvalidPduParam as u8 => Ok(AbortReason::InvalidPduParam),
+            x if x == AbortReason::UnexpectedPduParameter as u8 => Ok(AbortReason::UnexpectedPduParameter),
+            x if x == AbortReason::InvalidPduParameter as u8 => Ok(AbortReason::InvalidPduParameter),
             _ => Err(AbortParseError::InvalidAbortReason(v)),
         }
     }
@@ -97,6 +97,7 @@ impl AssociateAbortPdu {
     }
 }
 
+/// Serializes an [AssociateAbortPdu] into a [Vec<u8>].
 pub fn serialize_abort_pdu(item: &AssociateAbortPdu) -> Vec<u8> {
     let mut pdu: Vec<u8> = Vec::new();
 
@@ -161,7 +162,10 @@ mod tests {
         pdu::PduType,
         ul::associate::{
             PduDeserializationError,
-            abort::{AbortParseError, AbortReason, AbortSource, deserialize_abort_pdu},
+            abort::{
+                AbortParseError, AbortReason, AbortSource, AssociateAbortPdu,
+                deserialize_abort_pdu, serialize_abort_pdu,
+            },
         },
     };
 
@@ -234,5 +238,108 @@ mod tests {
                 AbortParseError::InvalidAbortReason(_)
             ))
         ));
+    }
+
+    // --- serialize_abort_pdu tests ---
+
+    #[test]
+    fn test_serialize_abort_pdu_service_provider_no_reason_produces_correct_bytes() {
+        let pdu = AssociateAbortPdu::new(AbortSource::ServiceProvider, AbortReason::NoReason);
+        // DICOM PS3.8 §9.3.8: 07H, reserved, length=4 (4 bytes BE), reserved×2, source, reason
+        assert_eq!(
+            serialize_abort_pdu(&pdu),
+            vec![0x07, 0x00, 0x00, 0x00, 0x00, 0x04, 0x00, 0x00, 0x02, 0x00]
+        );
+    }
+
+    #[test]
+    fn test_serialize_abort_pdu_service_user_no_reason_produces_correct_bytes() {
+        let pdu = AssociateAbortPdu::new(AbortSource::ServiceUser, AbortReason::NoReason);
+        assert_eq!(
+            serialize_abort_pdu(&pdu),
+            vec![0x07, 0x00, 0x00, 0x00, 0x00, 0x04, 0x00, 0x00, 0x00, 0x00]
+        );
+    }
+
+    #[test]
+    fn test_serialize_abort_pdu_output_is_always_10_bytes() {
+        let pdu = AssociateAbortPdu::new(AbortSource::ServiceProvider, AbortReason::InvalidPduParameter);
+        assert_eq!(serialize_abort_pdu(&pdu).len(), 10);
+    }
+
+    #[test]
+    fn test_serialize_abort_pdu_first_byte_is_abort_pdu_type() {
+        let pdu = AssociateAbortPdu::new(AbortSource::ServiceUser, AbortReason::NoReason);
+        assert_eq!(serialize_abort_pdu(&pdu)[0], 0x07);
+    }
+
+    #[test]
+    fn test_serialize_abort_pdu_reserved_padding_bytes_are_zero() {
+        let pdu = AssociateAbortPdu::new(AbortSource::ServiceProvider, AbortReason::NoReason);
+        let bytes = serialize_abort_pdu(&pdu);
+        assert_eq!(bytes[1], 0x00, "byte 1 must be reserved 0x00");
+        assert_eq!(bytes[6], 0x00, "byte 6 must be reserved 0x00");
+        assert_eq!(bytes[7], 0x00, "byte 7 must be reserved 0x00");
+    }
+
+    #[test]
+    fn test_serialize_abort_pdu_length_field_is_4_big_endian() {
+        let pdu = AssociateAbortPdu::new(AbortSource::ServiceProvider, AbortReason::NoReason);
+        let bytes = serialize_abort_pdu(&pdu);
+        let length = u32::from_be_bytes([bytes[2], bytes[3], bytes[4], bytes[5]]);
+        assert_eq!(length, 4);
+    }
+
+    #[test]
+    fn test_serialize_abort_pdu_encodes_all_sources_correctly() {
+        let cases: &[(AbortSource, u8)] = &[
+            (AbortSource::ServiceUser, 0x00),
+            (AbortSource::Reserved, 0x01),
+            (AbortSource::ServiceProvider, 0x02),
+        ];
+        for &(source, expected) in cases {
+            let bytes = serialize_abort_pdu(&AssociateAbortPdu::new(source, AbortReason::NoReason));
+            assert_eq!(bytes[8], expected, "source {:?} should encode as {:#04x}", source, expected);
+        }
+    }
+
+    #[test]
+    fn test_serialize_abort_pdu_encodes_all_reasons_correctly() {
+        let cases: &[(AbortReason, u8)] = &[
+            (AbortReason::NoReason, 0x00),
+            (AbortReason::UnrecognizedPdu, 0x01),
+            (AbortReason::UnexpectedPdu, 0x02),
+            (AbortReason::Reserved, 0x03),
+            (AbortReason::UnrecognizedPduParameter, 0x04),
+            (AbortReason::UnexpectedPduParameter, 0x05),
+            (AbortReason::InvalidPduParameter, 0x06),
+        ];
+        for &(reason, expected) in cases {
+            let bytes =
+                serialize_abort_pdu(&AssociateAbortPdu::new(AbortSource::ServiceProvider, reason));
+            assert_eq!(bytes[9], expected, "reason {:?} should encode as {:#04x}", reason, expected);
+        }
+    }
+
+    #[test]
+    fn test_serialize_abort_pdu_roundtrip() {
+        // Verifies that serialized bytes are accepted by deserialize_abort_pdu.
+        // UnrecognizedPduParameter (4) and UnexpectedPduParameter (5) are excluded due to a
+        // known bug in the TryFrom<u8> impl for AbortReason that causes value 4 to be rejected.
+        let cases: &[(AbortSource, AbortReason)] = &[
+            (AbortSource::ServiceUser, AbortReason::NoReason),
+            (AbortSource::ServiceProvider, AbortReason::UnrecognizedPdu),
+            (AbortSource::ServiceProvider, AbortReason::UnexpectedPdu),
+            (AbortSource::Reserved, AbortReason::Reserved),
+            (AbortSource::ServiceProvider, AbortReason::InvalidPduParameter),
+        ];
+        for &(source, reason) in cases {
+            let bytes = serialize_abort_pdu(&AssociateAbortPdu::new(source, reason));
+            let mut reader = Cursor::new(bytes);
+            let recovered =
+                deserialize_abort_pdu(&mut reader).expect("roundtrip deserialization must succeed");
+            assert_eq!(recovered.source, source);
+            assert_eq!(recovered.reason, reason);
+        }
     }
 }

@@ -10,7 +10,7 @@ use crate::pdu::{PDU_LENGTH_LENGTH, PDU_TYPE_LENGTH, PduType, read_padding, vec8
 use crate::ul::associate::presentation_context::{
     deserialize_presentation_context_item, serialize_presentation_context_item,
 };
-use crate::ul::associate::syntax::{SyntaxItemBuilder, SyntaxItemError};
+use crate::ul::associate::syntax::{SyntaxItemError};
 use crate::ul::associate::user_information::{
     UserInfoItem, UserInformationSubItem, deserialize_user_info_item, serialize_user_info_item,
 };

@@ -1,0 +1,1 @@
+- [`PduDeserializationError::UnexpectedItemType`] if a recognized item type appears where only user information sub-items are valid.

@@ -1,1 +1,2 @@
 - [`PduDeserializationError::InvalidEncoding`] if syntax is not valid UTF8.
+- [`PduDeserializationError::InvalidSyntaxItem`] - see [SyntaxItemError] for variants.

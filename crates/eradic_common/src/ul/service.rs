@@ -7,7 +7,7 @@ use crate::ul::associate::presentation_context::{
     PresentationContextItemBuilder, PresentationContextResult,
 };
 use crate::ul::associate::rj::ServiceUserReason;
-use crate::ul::associate::syntax::{SyntaxItem, SyntaxItemBuilder};
+use crate::ul::associate::syntax::{SyntaxItem};
 use crate::ul::associate::{
     ApplicationContextItem, AssociateItemType, AssociateRqAcPduError, PduDeserializationError,
     RejectedAssociateResult, UserInfoItem, UserInformationSubItem,
@@ -86,6 +86,40 @@ impl AssociateRequestIndication {
 
     pub fn user_information(&self) -> &Vec<UserInformation> {
         &self.user_information
+    }
+}
+
+impl TryFrom<AcceptedAssociateRequestResponse> for AssociateRqAcPdu {
+    type Error = AssociateRqAcPduError;
+
+    fn try_from(response: AcceptedAssociateRequestResponse) -> Result<Self, Self::Error> {
+        let mut presentation_context_items = Vec::new();
+
+        for context in response.presentation_context_result() {
+            presentation_context_items.push(
+                PresentationContextItemBuilder::new()
+                    .item_type(AssociateItemType::PresentationContextAc)
+                    .context_id(context.context_id)
+                    .result(context.result)
+                    .add_transfer_syntax(SyntaxItem::new(
+                        AssociateItemType::TransferSyntax,
+                        &context.transfer_syntax,
+                    )?)
+                    .build()?,
+            );
+        }
+
+        let user_info_item = UserInfoItem::new(
+            response.user_information().iter().map(|ui| UserInformationSubItem::new(*ui)).collect()
+        );
+
+        Ok(Self::new_ac(
+            &response.called_ae,
+            &response.calling_ae,
+            ApplicationContextItem::new(&response.context_name),
+            presentation_context_items,
+            user_info_item,
+        ))
     }
 }
 
@@ -325,40 +359,6 @@ impl TryFrom<AssociateRequestIndication> for AssociateRqAcPdu {
             &indication.called_ae,
             &indication.calling_ae,
             ApplicationContextItem::new(&indication.context_name),
-            presentation_context_items,
-            user_info_item,
-        ))
-    }
-}
-
-impl TryFrom<AcceptedAssociateRequestResponse> for AssociateRqAcPdu {
-    type Error = AssociateRqAcPduError;
-
-    fn try_from(response: AcceptedAssociateRequestResponse) -> Result<Self, Self::Error> {
-        let mut presentation_context_items = Vec::new();
-
-        for context in response.presentation_context_result() {
-            presentation_context_items.push(
-                PresentationContextItemBuilder::new()
-                    .item_type(AssociateItemType::PresentationContextAc)
-                    .context_id(context.context_id)
-                    .result(context.result)
-                    .add_transfer_syntax(SyntaxItem::new(
-                        AssociateItemType::TransferSyntax,
-                        &context.transfer_syntax,
-                    )?)
-                    .build()?,
-            );
-        }
-
-        let user_info_item = UserInfoItem::new(
-            response.user_information().iter().map(|ui| UserInformationSubItem::new(*ui)).collect()
-        );
-
-        Ok(Self::new_ac(
-            &response.called_ae,
-            &response.calling_ae,
-            ApplicationContextItem::new(&response.context_name),
             presentation_context_items,
             user_info_item,
         ))

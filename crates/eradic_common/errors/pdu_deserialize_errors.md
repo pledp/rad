@@ -1,1 +1,1 @@
-- [`PduDeserializationError::UnknownPduType`] if the PDU type is not recognized.
+- [`PduDeserializationError::UnrecognizedPduType`] if the PDU type is not recognized.

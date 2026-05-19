@@ -143,11 +143,36 @@ impl UpperLayerConnection {
                 commands
             }
 
-            _ => {
+            (Event::UnexpectedPdu, _) => {
                 let commands = unrecognized_or_invalid_pdu(&self.state, AbortReason::UnexpectedPdu);
                 self.state = UpperLayerConnectionState::WaitForTcpClose;
 
                 commands
+            }
+
+            (Event::UnrecognizedPduParameter, _) => {
+                let commands = unrecognized_or_invalid_pdu(&self.state, AbortReason::UnrecognizedPduParameter);
+                self.state = UpperLayerConnectionState::WaitForTcpClose;
+
+                commands
+            }
+
+            (Event::InvalidPduParameter, _) => {
+                let commands = unrecognized_or_invalid_pdu(&self.state, AbortReason::InvalidPduParameter);
+                self.state = UpperLayerConnectionState::WaitForTcpClose;
+
+                commands
+            }
+
+            (Event::UnexpectedPduParameter, _) => {
+                let commands = unrecognized_or_invalid_pdu(&self.state, AbortReason::UnexpectedPduParameter);
+                self.state = UpperLayerConnectionState::WaitForTcpClose;
+
+                commands
+            }
+
+            _ => {
+                todo!()
             }
         };
 

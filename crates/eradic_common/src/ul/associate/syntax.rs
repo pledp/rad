@@ -90,6 +90,7 @@ impl SyntaxItem {
         })
     }
 
+    /// The total length of the resulting item. The total length is a superset of [SyntaxItem::length].
     pub fn item_length(&self) -> u32 {
         const SYNTAX_ITEM_DEFAULT_LENGTH: u32 = 4;
 
@@ -99,11 +100,6 @@ impl SyntaxItem {
     pub fn syntax(&self) -> &str {
         &self.syntax
     }
-}
-
-pub struct SyntaxItemBuilder {
-    item_type: Option<AssociateItemType>,
-    syntax: Option<String>,
 }
 
 #[cfg(test)]
@@ -129,6 +125,14 @@ mod tests {
         ));
         assert!(matches!(
             SyntaxItem::new(AssociateItemType::UserInformation, "1.2.840.10008.1.1"),
+            Err(SyntaxItemError::InvalidItemType)
+        ));
+        assert!(matches!(
+            SyntaxItem::new(AssociateItemType::ApplicationContext, "1.2.840.10008.1.1"),
+            Err(SyntaxItemError::InvalidItemType)
+        ));
+        assert!(matches!(
+            SyntaxItem::new(AssociateItemType::PresentationContextRq, "1.2.840.10008.1.1"),
             Err(SyntaxItemError::InvalidItemType)
         ));
     }
@@ -208,6 +212,33 @@ mod tests {
             deserialize_syntax_item(&mut data),
             Err(PduDeserializationError::InvalidEncoding(_))
         ));
+    }
+
+    #[test]
+    fn test_deserialize_syntax_item_truncated_at_item_type() {
+        let mut data = Cursor::new(vec![]);
+
+        assert!(matches!(
+            deserialize_syntax_item(&mut data),
+            Err(PduDeserializationError::InvalidLength(_))
+        ));
+    }
+
+    #[test]
+    fn test_deserialize_syntax_item_truncated_at_item_length() {
+        // item_type byte + padding only, no room for item_length
+        let mut data = Cursor::new(vec![0x40, 0x00]);
+
+        assert!(matches!(
+            deserialize_syntax_item(&mut data),
+            Err(PduDeserializationError::InvalidLength(_))
+        ));
+    }
+
+    #[test]
+    fn test_syntax_item_length_empty_syntax() {
+        let item = SyntaxItem::new(AssociateItemType::AbstractSyntax, "").unwrap();
+        assert_eq!(item.item_length(), 4);
     }
 
     #[test]
