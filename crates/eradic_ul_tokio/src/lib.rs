@@ -1,9 +1,11 @@
+mod artim;
 mod handle_client;
 
-use eradic_common::ul::associate::{AssociateRqAcPdu, AssociateRqAcPduError, deserialized_pdu_from_reader, serialize_associate_pdu};
-use eradic_common::ul::event::{Command, event_from_deserialized_pdu};
-use eradic_common::ul::service::{AssociateRequestIndication, AssociateRequestResponse};
-use eradic_common::ul::{associate::PduDeserializationError, connection::{UpperLayerConnection}, event::{Event, Indication}, pdu::{PDU_HEADER_LENGTH, PduType, read_pdu_header}};
+use eradic_common::ul::associate::{AssociateRqAcPdu};
+use eradic_common::ul::connection::UpperLayerStateMachineError;
+use eradic_common::ul::event::{Command};
+use eradic_common::ul::service::{AssociateRequestIndication};
+use eradic_common::ul::{associate::PduDeserializationError, connection::{UpperLayerConnection}, event::{Event, Indication}};
 
 use thiserror::Error;
 
@@ -11,8 +13,7 @@ use core::net::SocketAddr;
 use std::{io::Cursor};
 
 use tokio::net::{TcpStream};
-use tokio::sync::mpsc;
-use tracing::{info, instrument};
+use tracing::{instrument};
 
 use crate::handle_client::handle_client;
 
@@ -22,6 +23,8 @@ pub enum HandleClientError {
     Io(#[from] std::io::Error),
     #[error(transparent)]
     PduDeserializationError(#[from] PduDeserializationError),
+    #[error(transparent)]
+    UpperLayerStateMachineError(#[from] UpperLayerStateMachineError),
 }
 
 #[instrument(skip(tcp, scu_handler) fields(ip = %socket_addr.ip(), port = %socket_addr.port()))]
@@ -34,14 +37,16 @@ where
     F: Fn(Indication) -> Fut + Send + Sync + 'static,
     Fut: Future<Output = Option<Event>> + Send + 'static,
 {
-    let connection = UpperLayerConnection::new_server(
+    let connection = UpperLayerConnection::new_no_assoc_with_addresses(
         tcp.local_addr()?.ip(),
         tcp.local_addr()?.port(),
         socket_addr.ip(),
         socket_addr.port(),
     );
 
-    handle_client(tcp, socket_addr, connection, scu_handler, vec![]).await
+    handle_client(tcp, socket_addr, connection, scu_handler, vec![
+        Event::TransportConnectionIndication
+    ]).await
 }
 
 #[instrument(skip(tcp, scu_handler) fields(ip = %socket_addr.ip(), port = %socket_addr.port()))]
@@ -63,6 +68,6 @@ where
     );
 
     handle_client(tcp, socket_addr, connection, scu_handler, vec![
-        Command::AssociateRequestPdu(AssociateRqAcPdu::try_from(request)?)
+        Event::AssociateRequestPrimitive(request)
     ]).await
 }

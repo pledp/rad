@@ -5,7 +5,7 @@ use thiserror::Error;
 use crate::ul::{associate::{AssociateRqAcPdu, AssociateRqAcPduError, PduDeserializationError, abort::{AbortReason, AbortSource, AssociateAbortPdu}}, event::{Command, Event}, service::{AbortIndication, AssociateRequestIndication, ProviderAbortIndication}};
 
 #[derive(Debug, Error)]
-pub enum UpperLayerConnectionError {
+pub enum UpperLayerStateMachineError {
     #[error(transparent)]
     AssociateRqAcFromError(#[from] AssociateRqAcPduError)
 }
@@ -38,7 +38,7 @@ pub enum UpperLayerConnectionState {
 /// See [DICOM standard part 8](https://dicom.nema.org/medical/dicom/current/output/html/part08).
 #[derive(Clone, Debug)]
 pub struct UpperLayerConnection {
-    state: UpperLayerConnectionState,
+    pub state: UpperLayerConnectionState,
     called_address: Option<String>,
     calling_address: Option<String>,
 }
@@ -67,15 +67,14 @@ impl UpperLayerConnection {
         }
     }
 
-    /// Creates a connection that starts from Sta2.
-    pub fn new_server(
+    pub fn new_no_assoc_with_addresses(
         called_address: IpAddr,
         called_port: u16,
         calling_address: IpAddr,
         calling_port: u16
     ) -> Self {
         Self {
-            state: UpperLayerConnectionState::WaitingForRequestPdu,
+            state: UpperLayerConnectionState::Idle,
             called_address: Some(format_presentation_address(called_address, called_port)),
             calling_address: Some(format_presentation_address(calling_address, calling_port)),
         }
@@ -87,11 +86,11 @@ impl UpperLayerConnection {
     pub fn handle_event(
         &mut self,
         event: Event,
-    ) -> Result<Vec<Command>, UpperLayerConnectionError> {
+    ) -> Result<Vec<Command>, UpperLayerStateMachineError> {
         let commands = match (event, self.state) {
             (Event::TransportConnectionIndication, _) => {
                 self.state = UpperLayerConnectionState::WaitingForRequestPdu;
-                vec![]
+                vec![Command::StartArtimTimer]
             }
 
            (Event::AssociateRequestPdu(pdu), _) => {
@@ -103,7 +102,7 @@ impl UpperLayerConnection {
                     self.calling_address.clone().unwrap(),
                 );
 
-                vec![Command::AssociateIndication(indication)]
+                vec![Command::StopArtimTimer, Command::AssociateIndication(indication)]
             }
 
             (Event::AssociateResponsePrimitiveAccept(prim), _) => {
@@ -116,6 +115,12 @@ impl UpperLayerConnection {
                 self.state = UpperLayerConnectionState::Idle;
 
                 vec![Command::AbortIndication(AbortIndication::from_pdu(pdu))]
+            }
+
+            (Event::TransportConnectionClosedIndication, UpperLayerConnectionState::WaitForTcpClose | UpperLayerConnectionState::WaitingForRequestPdu) => {
+                self.state = UpperLayerConnectionState::Idle;
+
+                vec![Command::StopArtimTimer]
             }
 
             (Event::TransportConnectionClosedIndication, state)
@@ -133,7 +138,7 @@ impl UpperLayerConnection {
 
                 info!("Accepted association");
 
-                vec![]
+                vec![Command::StopArtimTimer]
             }
 
             (Event::UnrecognizedPdu, _) => {
@@ -169,6 +174,13 @@ impl UpperLayerConnection {
                 self.state = UpperLayerConnectionState::WaitForTcpClose;
 
                 commands
+            }
+
+            // AA-2: ARTIM expired — close transport connection, go to Sta1.
+            (Event::ArtimTimerExpired, _) => {
+                self.state = UpperLayerConnectionState::Idle;
+
+                vec![Command::CloseConnection]
             }
 
             _ => {

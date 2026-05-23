@@ -15,6 +15,7 @@ use crate::ul::associate::{
 use crate::ul::associate::{
     AssociateRqAcPdu, UserInformation, presentation_context::PresentationContextItem,
 };
+use crate::ul::connection::format_presentation_address;
 
 /// DICOM ISO/TR 8509 request and indication primitive. Request and indication contain the same fields.
 ///

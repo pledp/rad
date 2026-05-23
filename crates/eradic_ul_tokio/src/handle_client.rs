@@ -2,22 +2,25 @@ use core::net::SocketAddr;
 use std::io::Cursor;
 
 use eradic_common::DeserializedPdu;
-use eradic_common::ul::associate::abort::serialize_abort_pdu;
+use eradic_common::ul::associate::abort::{AbortReason, serialize_abort_pdu};
 use eradic_common::ul::associate::{PduDeserializationError, deserialized_pdu_from_reader, serialize_associate_pdu};
 use eradic_common::ul::pdu::{PDU_HEADER_LENGTH, PduType, read_pdu_header};
+use eradic_common::ul::service::ProviderAbortIndication;
 use thiserror::Error;
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
+use tokio::sync::oneshot;
 use tokio::{
     net::TcpStream,
     sync::mpsc,
     task::JoinSet,
 };
 
-use tracing::{info, instrument};
-use tracing_log::log::{warn};
+use tracing::{info, instrument, warn};
 
-use eradic_common::ul::connection::{UpperLayerConnection};
+use eradic_common::ul::connection::{UpperLayerConnection, UpperLayerConnectionState};
 use eradic_common::ul::event::{Command, Event, Indication, event_from_deserialized_pdu};
+
+use crate::artim::artim_task;
 
 use crate::{HandleClientError};
 
@@ -25,9 +28,9 @@ use crate::{HandleClientError};
 pub async fn handle_client<F, Fut>(
     tcp: TcpStream,
     socket_addr: SocketAddr,
-    mut connection: UpperLayerConnection,
+    connection: UpperLayerConnection,
     scu_handler: F,
-    initial_commands: Vec<Command>
+    initial_events: Vec<Event>
 ) -> Result<(), HandleClientError>
 where
     F: Fn(Indication) -> Fut + Send + Sync + 'static,
@@ -39,11 +42,11 @@ where
         socket_addr.port()
     );
 
-    let (mut reader, writer) = tcp.into_split();
+    let (reader, writer) = tcp.into_split();
 
-    let (command_tx, command_rx) = mpsc::channel::<Command>(32);
+    let (command_tx, command_rx) = mpsc::channel::<(Command, UpperLayerConnectionState)>(32);
     let (event_tx, event_rx) = mpsc::channel::<Event>(32);
-    let (user_tx, mut user_rx) = mpsc::channel::<Indication>(32);
+    let (user_tx, user_rx) = mpsc::channel::<Indication>(32);
 
     let mut set: JoinSet<Result<(), HandleClientError>> = JoinSet::new();
 
@@ -55,19 +58,23 @@ where
         connection
     ));
 
-    set.spawn(handle_command_task(writer, command_rx, user_tx));
+    set.spawn(handle_command_task(writer, command_rx, user_tx, event_tx.clone()));
 
-    set.spawn(pdu_read_task(reader, event_tx));
+    set.spawn(pdu_read_task(reader, event_tx.clone()));
 
-    for cmd in initial_commands {
-        println!("{}", cmd);
-        command_tx.send(cmd).await;
+    for event in initial_events {
+        event_tx.send(event).await;
     }
+
+    drop(event_tx);
+
+    let mut client_result: Result<(), HandleClientError> = Ok(());
 
     if let Some(result) = set.join_next().await {
         match result {
             Ok(Err(e)) => {
                 warn!("Task exited unexpectedly: {:?}", e);
+                client_result = Err(e);
             }
             _ => {}
         }
@@ -81,7 +88,7 @@ where
         socket_addr.port()
     );
 
-    Ok(())
+    client_result
 }
 
 #[instrument(skip_all)]
@@ -169,34 +176,79 @@ where
 #[instrument(skip_all)]
 async fn handle_event_task(
     mut event_rx: mpsc::Receiver<Event>,
-    command_tx: mpsc::Sender<Command>,
+    command_tx: mpsc::Sender<(Command, UpperLayerConnectionState)>,
     mut conn: UpperLayerConnection,
 ) -> Result<(), HandleClientError> {
     while let Some(event) = event_rx.recv().await {
-        info!("Event received");
+        info!("Event received: {:?}", event);
 
-        let commands = conn.handle_event(event).unwrap();
+        match conn.handle_event(event) {
+            Ok(commands) => {
+                for cmd in commands {
+                    command_tx.send((cmd, conn.state)).await;
+                }
+            }
+            Err(e) => {
+                command_tx.send((
+                    Command::ProviderAbortIndication(
+                        ProviderAbortIndication::new(AbortReason::NoReason)
+                    ),
+                    conn.state
+                )).await;
 
-        for cmd in commands {
-            command_tx.send(cmd).await;
+                return Err(e.into());
+            }
         }
     }
 
-    info!("Exiting");
     Ok(())
 }
 
 #[instrument(skip_all)]
 async fn handle_command_task<W>(
     mut writer: W,
-    mut rx: mpsc::Receiver<Command>,
+    mut rx: mpsc::Receiver<(Command, UpperLayerConnectionState)>,
     user_connection: mpsc::Sender<Indication>,
+    event_tx: mpsc::Sender<Event>,
 ) -> Result<(), HandleClientError>
 where
     W: AsyncWrite + Unpin,
 {
-    while let Some(command) = rx.recv().await {
+    let mut artim_cancel: Option<oneshot::Sender<()>> = None;
+
+    while let Some((command, state)) = rx.recv().await {
         match command {
+            // Acceptor and Requestor commands
+            Command::AbortIndication(indication) => {
+                user_connection
+                    .send(Indication::AbortIndication(indication))
+                    .await;
+
+                writer.shutdown().await;
+                return Ok(());
+            }
+
+            Command::ProviderAbortIndication(indication) => {
+                user_connection
+                    .send(Indication::ProviderAbortIndication(indication))
+                    .await;
+            }
+
+            Command::StartArtimTimer => {
+                let (cancel_tx, cancel_rx) = oneshot::channel();
+                tokio::spawn(artim_task(cancel_rx, event_tx.clone()));
+                artim_cancel = Some(cancel_tx);
+            }
+
+            Command::StopArtimTimer => {
+                artim_cancel = None;
+            }
+
+            Command::CloseConnection => {
+                writer.shutdown().await;
+                return Ok(());
+            }
+
             // Acceptor commands
             Command::AssociateAcceptPdu(pdu) => {
                 stream_write_pdu(DeserializedPdu::AssociateAccept(pdu), &mut writer).await;
@@ -213,25 +265,12 @@ where
                 stream_write_pdu(DeserializedPdu::AssociateRequest(pdu), &mut writer).await;
             }
 
-            // Acceptor and Requestor commands
-            Command::AbortIndication(indication) => {
-                user_connection
-                    .send(Indication::AbortIndication(indication))
-                    .await;
-
-                return Ok(());
-            }
-
-            Command::ProviderAbortIndication(indication) => {
-                user_connection
-                    .send(Indication::ProviderAbortIndication(indication))
-                    .await;
-
-                return Ok(());
-            }
-
             _ => todo!(),
         };
+
+        if state == UpperLayerConnectionState::Idle {
+            return Ok(())
+        }
     }
 
     Ok(())

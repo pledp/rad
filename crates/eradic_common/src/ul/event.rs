@@ -3,9 +3,9 @@ use strum_macros::{IntoStaticStr, Display};
 use thiserror::Error;
 
 use crate::{
-    DeserializedPdu, ul::associate::{AssociateRqAcPdu, abort::AssociateAbortPdu}, ul::service::{
+    DeserializedPdu, ul::{associate::{AssociateRqAcPdu, abort::AssociateAbortPdu}, service::{
         AbortIndication, AcceptedAssociateRequestResponse, AssociateRequestIndication, ProviderAbortIndication, RejectedAssociateRequestResponse
-    }
+    }}
 };
 
 /// DICOM standard events
@@ -28,7 +28,9 @@ pub enum Event {
     UnexpectedPdu,
     UnrecognizedPduParameter,
     UnexpectedPduParameter,
-    InvalidPduParameter
+    InvalidPduParameter,
+
+    ArtimTimerExpired,
 }
 
 /// Commands that the system should perform. Typically spawned in the case of an [Event].
@@ -40,9 +42,19 @@ pub enum Command {
     AssociateResponse(RejectedAssociateRequestResponse),
     AssociateAcceptPdu(AssociateRqAcPdu),
     AssociateRequestPdu(AssociateRqAcPdu),
-    AbortPdu(AssociateAbortPdu),
-    StartArtimTimer,
+
+    // Association Abort Related Actions/Commands
+
     OpenConnection,
+    /// DICOM standard Association Abort action AA-2.
+    CloseConnection,
+
+    // Generic command to send AbortPdu, used in AA-1 and AA-7
+    AbortPdu(AssociateAbortPdu),
+    // Generic command to stop ARTIM timer, used in AE-6, AR-5, AA-2 and AA-5
+    StopArtimTimer,
+    // Generic command to start ARTIM timer, used in AE-5, AE-6, AE-8, AR-4 and AA-8
+    StartArtimTimer,
 }
 
 #[derive(Debug, Error)]

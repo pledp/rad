@@ -1,4 +1,3 @@
-use std::fmt;
 use std::io::{BufRead, BufReader, Read};
 use std::string::String;
 
@@ -16,23 +15,17 @@ use crate::ul::associate::user_information::{
 };
 use crate::ul::associate::{
     AssociateItemType, ITEM_LENGTH_LENGTH, next_byte_item_type,
-    presentation_context::{PresentationContextItem, PresentationContextItemBuilder},
+    presentation_context::{PresentationContextItem},
 };
 use crate::ul::associate::{PduDeserializationError, presentation_context};
-use crate::ul::service::AssociateRequestIndication;
 
 /// Length of the Called-AE and Calling-AE fields in a A-ASSOCIATE-RQ or A-ASSOCIATE-AC PDU
 const AE_LENGTH: usize = 16;
 
-/// Length of sub-items without the variable field.
-const SUB_ITEM_NO_VARIABLE_FIELDS_LENGTH: u16 = 4;
-
 #[derive(Debug, Error)]
 pub enum AssociateRqAcPduError {
-    #[error("Transfer syntax result list must be ")]
-    TransferSyntaxInvalidLength,
     #[error(transparent)]
-    InvalidSyntaxItem(#[from] SyntaxItemError),
+    SyntaxItemError(#[from] SyntaxItemError),
     #[error(transparent)]
     PresentationContextError(#[from] presentation_context::PresentationContextError),
 }

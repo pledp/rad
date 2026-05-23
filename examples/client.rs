@@ -54,7 +54,7 @@ async fn main() -> Result<()> {
 
     let socket_addr = stream.peer_addr()?;
 
-    let result = requestor_handle_client(stream, socket_addr, indication, scu_handler).await;
+    loop {}
 
     Ok(())
 }
