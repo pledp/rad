@@ -1,30 +1,23 @@
-use std::path::{Path};
-
-use eradic::ul::connection::{format_presentation_address};
-use eradic::ul::associate::abort::{AssociateAbortPdu, serialize_abort_pdu};
-use eradic_ul_tokio::requestor_handle_client;
-use tokio::{
-    io::{AsyncReadExt, AsyncWriteExt, BufWriter},
-    net::TcpStream,
-};
-
-use eradic::ul::associate::{
-    AssociateRqAcPdu, MaximumLength, UserInformation, serialize_associate_pdu,
-};
-use eradic::ul::event::{Event, Indication};
-use eradic::open_file;
-use eradic::ul::service::{
-    AssociateRequestIndication, PresentationContextDefinitionListBuilder,
-};
+use eradic::ul::connection::format_presentation_address;
+use eradic::ul::associate::{MaximumLength, UserInformation};
+use eradic::ul::event::{Event, ServiceProviderToServiceUser, Request};
+use eradic::ul::service::{AssociateRequestIndication, PresentationContextDefinitionListBuilder};
+use eradic_ul_tokio::requestor_handle_connection;
+use tokio::net::TcpStream;
+use tokio::sync::mpsc;
+use tracing::{info, warn};
+use tracing_subscriber::fmt;
 
 pub type Result<T> = std::result::Result<T, Error>;
 pub type Error = Box<dyn std::error::Error + Send + Sync>;
 
 #[tokio::main]
 async fn main() -> Result<()> {
+    fmt().with_max_level(tracing::Level::DEBUG).init();
 
-    let mut stream = TcpStream::connect("127.0.0.1:104").await?;
-    println!("Connected to server");
+    info!("Connecting to 127.0.0.1:104");
+    let stream = TcpStream::connect("127.0.0.1:104").await?;
+    info!("Connected to {}", stream.peer_addr()?);
 
     let indication = AssociateRequestIndication::new(
         "1.2.840.10008.3.1.1.1".into(),
@@ -44,17 +37,19 @@ async fn main() -> Result<()> {
         ],
     );
 
-
     let scu_handler = {
-        move |indication: Indication| async move {
-            println!("Indication!");
-            None::<Event>
+        move |indication: ServiceProviderToServiceUser| async move {
+            info!("indication received: {}", <&str>::from(&indication));
         }
     };
 
     let socket_addr = stream.peer_addr()?;
+    let (_, scu_rx) = mpsc::channel::<Request>(32);
 
-    loop {}
+    let result = requestor_handle_connection(stream, socket_addr, indication, scu_handler, scu_rx).await;
+    if let Err(ref e) = result {
+        warn!("client exited with error: {e}");
+    }
 
     Ok(())
 }

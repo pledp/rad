@@ -15,10 +15,11 @@ use opentelemetry::global;
 use opentelemetry::trace::TracerProvider as _; // brings .tracer() into scope
 use opentelemetry_otlp::SpanExporter;
 use opentelemetry_sdk::trace::SdkTracerProvider;
+use tokio::sync::mpsc;
 use tracing::{Level, info};
 use tracing_subscriber::{fmt, layer::SubscriberExt, util::SubscriberInitExt};
 
-use eradic::ul::event::Indication;
+use eradic::ul::event::{Request, ServiceProviderToServiceUser, ServiceUserToServiceProvider};
 use eradic_ul_tokio::{acceptor_handle_client};
 
 use crate::service_user::LocalUpperLayerServiceUser;
@@ -45,19 +46,20 @@ async fn main() -> Result<()> {
         let ul_scu_clone = Arc::clone(&ul_scu);
 
         tokio::spawn(async move {
+            let (scu_tx, scu_rx) = mpsc::channel::<>(32);
+
             let scu_handler = {
-                move |indication: Indication| {
+                move |indication: ServiceProviderToServiceUser| {
                     let ul_scu_closure = Arc::clone(&ul_scu_clone);
+                    let scu_tx_clone = scu_tx.clone();
                     async move {
                         match indication {
-                            Indication::AssociateIndication(indication) => {
-                                Some(ul_scu_closure.handle_associate_request(indication).await)
+                            ServiceProviderToServiceUser::AssociateIndication(indication) => {
+                                scu_tx_clone.send(
+                                    ServiceUserToServiceProvider::Event(ul_scu_closure.handle_associate_request(indication).await)
+                                ).await;
                             }
-                            Indication::ProviderAbortIndication(indicationn) => return None,
-                            Indication::AbortIndication(indication) => {
-                                return None;
-                            }
-                            _ => todo!(),
+                            _ => {}
                         }
                     }
                 }
@@ -65,16 +67,13 @@ async fn main() -> Result<()> {
 
             client_count_clone.fetch_add(1, Ordering::AcqRel);
 
-            let result = acceptor_handle_client(tcp, socket_addr, scu_handler).await;
+            let result = acceptor_handle_client(tcp, socket_addr, scu_handler, scu_rx).await;
 
             client_count_clone.fetch_sub(1, Ordering::AcqRel);
 
             result
         });
     }
-
-    provider.shutdown()?;
-    Ok(())
 }
 
 pub fn init_telemetry() -> Result<SdkTracerProvider> {

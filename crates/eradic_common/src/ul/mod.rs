@@ -3,6 +3,7 @@ pub mod connection;
 pub mod event;
 pub mod associate;
 pub mod pdu;
+pub(crate) mod table;
 
 pub struct UpperLayerConfiguration {
     /// DICOM standard ARTIM (Association Request/Reject/Relase Timer) is used as a timeout for hung

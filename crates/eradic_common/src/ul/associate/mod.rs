@@ -32,7 +32,8 @@ const CONTEXT_ID_LENGTH: usize = 1;
 const RESULT_LENGTH: usize = 1;
 
 #[derive(Debug, PartialEq)]
-pub enum RejectedAssociateResult {
+pub enum AssociationResult {
+    Accepted,
     RejectedPermanent,
     RejectedTransient,
 }

@@ -1,4 +1,4 @@
-use crate::{ul::associate::RejectedAssociateResult, ul::pdu::PduType};
+use crate::{ul::associate::AssociationResult, ul::pdu::PduType};
 
 pub enum RejectSource {
     ServiceUser,
@@ -33,7 +33,7 @@ pub enum PresentationReason {
 struct AssociateRjPdu {
     pdu_type: PduType,
     length: u32,
-    result: RejectedAssociateResult,
+    result: AssociationResult,
     source: RejectSource,
     reason: Option<RejectReason>,
 }

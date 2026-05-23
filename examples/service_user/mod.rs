@@ -8,7 +8,7 @@ use eradic::{
     },
     ul::event::Event,
     ul::service::{
-        AcceptedAssociateRequestResponse, AssociateRequestIndication,
+        AssociateRequestResponse, AssociateRequestIndication,
     },
 };
 
@@ -28,12 +28,14 @@ impl Pacs {
             })
             .collect();
 
-        Event::AssociateResponsePrimitiveAccept(AcceptedAssociateRequestResponse {
+        Event::AssociateResponsePrimitive(AssociateRequestResponse {
             context_name: indication.context_name,
             called_ae: indication.called_ae,
             calling_ae: indication.calling_ae,
             user_information: indication.user_information,
             presentation_context_result,
+            diagnostic: None,
+            result: None,
         })
     }
 }

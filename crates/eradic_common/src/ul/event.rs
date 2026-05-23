@@ -1,26 +1,25 @@
-use strum_macros::{IntoStaticStr, Display};
+use strum_macros::{EnumDiscriminants, IntoStaticStr, Display};
 
 use thiserror::Error;
 
 use crate::{
     DeserializedPdu, ul::{associate::{AssociateRqAcPdu, abort::AssociateAbortPdu}, service::{
-        AbortIndication, AcceptedAssociateRequestResponse, AssociateRequestIndication, ProviderAbortIndication, RejectedAssociateRequestResponse
+        AbortIndication, AssociateRequestConfirmation, AssociateRequestIndication, AssociateRequestResponse, ProviderAbortIndication
     }}
 };
 
 /// DICOM standard events
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, IntoStaticStr)]
 pub enum Event {
     TransportConnectionIndication,
-    ConnectionOpen,
+    ConnectionOpen(AssociateRequestIndication),
     AssociateRequestPdu(AssociateRqAcPdu),
     AssociateRejectPdu,
     AssociateAcceptPdu(AssociateRqAcPdu),
     DataPdu,
     AssociateAbortPdu(AssociateAbortPdu),
     AssociateRequestPrimitive(AssociateRequestIndication),
-    AssociateResponsePrimitiveReject(RejectedAssociateRequestResponse),
-    AssociateResponsePrimitiveAccept(AcceptedAssociateRequestResponse),
+    AssociateResponsePrimitive(AssociateRequestResponse),
     TransportConnectionClosedIndication,
 
     // Abort events
@@ -29,23 +28,26 @@ pub enum Event {
     UnrecognizedPduParameter,
     UnexpectedPduParameter,
     InvalidPduParameter,
+    AbortRequest,
 
     ArtimTimerExpired,
 }
 
 /// Commands that the system should perform. Typically spawned in the case of an [Event].
-#[derive(IntoStaticStr, Display, Debug)]
+#[derive(IntoStaticStr, Display, Debug, EnumDiscriminants)]
+#[strum_discriminants(name(CommandKind), derive(serde::Deserialize))]
 pub enum Command {
     AssociateIndication(AssociateRequestIndication),
     AbortIndication(AbortIndication),
     ProviderAbortIndication(ProviderAbortIndication),
-    AssociateResponse(RejectedAssociateRequestResponse),
+    AssociateResponse(AssociateRequestResponse),
     AssociateAcceptPdu(AssociateRqAcPdu),
     AssociateRequestPdu(AssociateRqAcPdu),
 
+    AssociateConfirmation(AssociateRequestConfirmation),
+
     // Association Abort Related Actions/Commands
 
-    OpenConnection,
     /// DICOM standard Association Abort action AA-2.
     CloseConnection,
 
@@ -63,14 +65,25 @@ pub enum IndicationError {
     InvalidCommand(Command),
 }
 
+pub enum ServiceUserToServiceProvider {
+    AbortRequest,
+    Event(Event)
+}
+
+pub type Request = ServiceUserToServiceProvider;
+pub type Response = ServiceUserToServiceProvider;
+
 #[derive(IntoStaticStr)]
-pub enum Indication {
+pub enum ServiceProviderToServiceUser {
     AssociateIndication(AssociateRequestIndication),
     AbortIndication(AbortIndication),
     ProviderAbortIndication(ProviderAbortIndication)
 }
 
-impl Indication {
+pub type Indication = ServiceProviderToServiceUser;
+pub type Confirmation = ServiceProviderToServiceUser;
+
+impl ServiceProviderToServiceUser {
     pub fn from_command(cmd: Command) -> Result<Self, IndicationError> {
         match cmd {
             Command::AssociateIndication(inner) => {
