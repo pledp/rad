@@ -6,6 +6,7 @@ use thiserror::Error;
 
 use crate::ul::associate::{AssociateRqAcPdu, PduDeserializationError};
 use crate::ul::associate::abort::AssociateAbortPdu;
+use crate::ul::associate::rj::AssociateRjPdu;
 
 /// The length of the PDU-type field in the PDU. The Item Type field is the same in A-Associate PDU's.
 pub(crate) const PDU_TYPE_LENGTH: usize = 1;
@@ -21,6 +22,7 @@ const APPLICATION_CONTEXT_NAME: &'static str = "1.2.840.10008.3.1.1.1";
 pub enum DeserializedPdu {
     AssociateRequest(AssociateRqAcPdu),
     AssociateAccept(AssociateRqAcPdu),
+    AssociateReject(AssociateRjPdu),
     Abort(AssociateAbortPdu),
 }
 

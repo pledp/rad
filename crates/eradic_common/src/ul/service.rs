@@ -6,7 +6,7 @@ use crate::ul::associate::abort::{AbortReason, AbortSource, AssociateAbortPdu};
 use crate::ul::associate::presentation_context::{
     PresentationContextItemBuilder, PresentationContextResult,
 };
-use crate::ul::associate::rj::ServiceUserReason;
+use crate::ul::associate::rj::{AssociateRjPdu, RejectReason, ServiceUserReason};
 use crate::ul::associate::syntax::{SyntaxItem};
 use crate::ul::associate::{
     ApplicationContextItem, AssociateItemType, AssociateRqAcPduError, PduDeserializationError,
@@ -18,15 +18,18 @@ use crate::ul::associate::{
 use crate::ul::connection::format_presentation_address;
 
 #[derive(Error, Debug)]
-enum PrimitiveError {
+pub(crate) enum PrimitiveError {
     #[error("PresentationContextItem has no result.")]
     NoResult
 }
 
 
+pub type AssociateRequest = AssociateRequestIndication;
+pub type AssociateIndication = AssociateRequestIndication;
+
 /// DICOM ISO/TR 8509 request and indication primitive. Request and indication contain the same fields.
 ///
-/// Indicates a request to establish an Associate or a request PDU via TCP.
+/// Indicates a request to establish an Associate or an Indication of a A-ASSOCIATE-RQ PDU.
 #[derive(Clone, Debug, PartialEq)]
 pub struct AssociateRequestIndication {
     pub context_name: String,
@@ -290,7 +293,7 @@ impl AssociateRequestResponse {
 }
 
 #[derive(Debug, PartialEq)]
-pub struct AssociateRequestConfirmation {
+pub struct AssociateConfirmation {
     pub context_name: String,
     pub called_ae: String,
     pub calling_ae: String,
@@ -300,7 +303,23 @@ pub struct AssociateRequestConfirmation {
     pub presentation_context_result: Vec<PresentationContextDefinitionResult>,
 }
 
-impl AssociateRequestConfirmation {
+impl AssociateConfirmation {
+    pub fn from_rj_pdu(pdu: AssociateRjPdu) -> Self {
+        let diagnostic = match pdu.reason {
+            Some(RejectReason::ServiceUser(r)) => Some(r),
+            _ => None,
+        };
+        Self {
+            context_name: String::new(),
+            called_ae: String::new(),
+            calling_ae: String::new(),
+            diagnostic,
+            result: pdu.result,
+            user_information: vec![],
+            presentation_context_result: vec![],
+        }
+    }
+
     pub fn from_ac_pdu(
         pdu: AssociateRqAcPdu,
     ) -> Result<Self, PrimitiveError> {

@@ -15,7 +15,7 @@ TransportConnectionClosedIndication = { to = "Sta1", commands = ["StopArtimTimer
 ArtimTimerExpired            = { to = "Sta1", commands = ["CloseConnection"] }
 
 [transitions.Sta3]
-AssociateResponsePrimitiveAccept = { to = "Sta6",  commands = ["AssociateAcceptPdu"] }
+AssociateResponsePrimitive = { to = "Sta6",  commands = ["AssociateAcceptPdu"] }
 UnrecognizedPdu              = { to = "Sta13", commands = ["AbortPdu", "StartArtimTimer", "ProviderAbortIndication"] }
 UnexpectedPdu                = { to = "Sta13", commands = ["AbortPdu", "StartArtimTimer", "ProviderAbortIndication"] }
 UnrecognizedPduParameter     = { to = "Sta13", commands = ["AbortPdu", "StartArtimTimer", "ProviderAbortIndication"] }
@@ -28,7 +28,8 @@ AbortRequest                 = { to = "Sta13", commands = ["AbortPdu", "StartArt
 ConnectionOpen               = { to = "Sta5", commands = ["AssociateRequestPdu"] }
 
 [transitions.Sta5]
-AssociateAcceptPdu           = { to = "Sta6",  commands = ["AssociateAcceptIndication"] }
+AssociateAcceptPdu           = { to = "Sta6",  commands = ["AssociateConfirmation"] }
+AssociateRejectPdu           = { to = "Sta1",  commands = ["AssociateConfirmation"] }
 UnrecognizedPdu              = { to = "Sta13", commands = ["AbortPdu", "StartArtimTimer", "ProviderAbortIndication"] }
 UnexpectedPdu                = { to = "Sta13", commands = ["AbortPdu", "StartArtimTimer", "ProviderAbortIndication"] }
 UnrecognizedPduParameter     = { to = "Sta13", commands = ["AbortPdu", "StartArtimTimer", "ProviderAbortIndication"] }

@@ -1,7 +1,7 @@
 use eradic::ul::connection::format_presentation_address;
 use eradic::ul::associate::{MaximumLength, UserInformation};
 use eradic::ul::event::{Event, ServiceProviderToServiceUser, Request};
-use eradic::ul::service::{AssociateRequestIndication, PresentationContextDefinitionListBuilder};
+use eradic::ul::service::{AssociateRequest, AssociateRequestIndication, PresentationContextDefinitionListBuilder};
 use eradic_ul_tokio::requestor_handle_connection;
 use tokio::net::TcpStream;
 use tokio::sync::mpsc;
@@ -19,7 +19,7 @@ async fn main() -> Result<()> {
     let stream = TcpStream::connect("127.0.0.1:104").await?;
     info!("Connected to {}", stream.peer_addr()?);
 
-    let indication = AssociateRequestIndication::new(
+    let request = AssociateRequest::new(
         "1.2.840.10008.3.1.1.1".into(),
         "rad".into(),
         "test1".into(),
@@ -44,11 +44,10 @@ async fn main() -> Result<()> {
     };
 
     let socket_addr = stream.peer_addr()?;
-    let (_, scu_rx) = mpsc::channel::<Request>(32);
+    let mut handle = requestor_handle_connection(stream, socket_addr, request)?;
 
-    let result = requestor_handle_connection(stream, socket_addr, indication, scu_handler, scu_rx).await;
-    if let Err(ref e) = result {
-        warn!("client exited with error: {e}");
+    while let Some(indication) = handle.scp_to_scu_rx.recv().await {
+        info!("indication received: {}", <&str>::from(&indication));
     }
 
     Ok(())

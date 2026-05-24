@@ -18,35 +18,29 @@ use tokio::{
 use tracing::{info, instrument, warn};
 
 use eradic_common::ul::connection::{UpperLayerConnection, UpperLayerConnectionState};
-use eradic_common::ul::event::{Command, Event, Request, ServiceProviderToServiceUser, ServiceUserToServiceProvider, event_from_deserialized_pdu};
+use eradic_common::ul::event::{Command, Confirmation, Event, Request, ServiceProviderToServiceUser, ServiceUserToServiceProvider, event_from_deserialized_pdu};
 
 use crate::artim::artim_task;
 
 use crate::{HandleClientError};
 
 #[instrument(skip_all)]
-pub async fn handle_connection<F, Fut>(
+pub async fn handle_connection(
     tcp: TcpStream,
     socket_addr: SocketAddr,
     connection: UpperLayerConnection,
-    scu_handler: F,
-    scu_rx: mpsc::Receiver<Request>,
+    scp_to_scu_tx: mpsc::Sender<ServiceProviderToServiceUser>,
+    scu_to_scp_rx: mpsc::Receiver<ServiceUserToServiceProvider>,
     initial_events: Vec<Event>
-) -> Result<(), HandleClientError>
-where
-    F: Fn(ServiceProviderToServiceUser) -> Fut + Send + Sync + 'static,
-    Fut: Future<Output = ()> + Send + 'static,
-{
+) -> Result<(), HandleClientError> {
     let (reader, writer) = tcp.into_split();
 
     let (command_tx, command_rx) = mpsc::channel::<(Command, UpperLayerConnectionState)>(32);
     let (event_tx, event_rx) = mpsc::channel::<Event>(32);
-    let (user_tx, user_rx) = mpsc::channel::<ServiceProviderToServiceUser>(32);
 
     let mut set: JoinSet<Result<(), HandleClientError>> = JoinSet::new();
 
-    set.spawn(provider_to_scu_task(user_rx, event_tx.clone(), scu_handler));
-    set.spawn(scu_to_provider_task(scu_rx, event_tx.clone()));
+    set.spawn(scu_to_scp_task(scu_to_scp_rx, event_tx.clone()));
 
     set.spawn(handle_event_task(
         event_rx,
@@ -54,7 +48,7 @@ where
         connection
     ));
 
-    set.spawn(handle_command_task(writer, command_rx, user_tx, event_tx.clone()));
+    set.spawn(handle_command_task(writer, command_rx, event_tx.clone(), scp_to_scu_tx));
     set.spawn(pdu_read_task(reader, event_tx.clone()));
 
     for event in initial_events {
@@ -65,43 +59,25 @@ where
 
     let mut client_result: Result<(), HandleClientError> = Ok(());
 
-    if let Some(result) = set.join_next().await {
+    while let Some(result) = set.join_next().await {
         match result {
             Ok(Err(e)) => {
                 warn!("Task exited unexpectedly: {:?}", e);
                 client_result = Err(e);
             }
-            _ => {}
+            _ => {
+                info!("Task exited")
+            }
         }
-
-        set.join_all().await;
     }
+
+    info!("Ending task");
 
     client_result
 }
 
 #[instrument(skip_all)]
-async fn provider_to_scu_task<F, Fut>(
-    mut rx: mpsc::Receiver<ServiceProviderToServiceUser>,
-    event_tx: mpsc::Sender<Event>,
-    scu_handler: F,
-) -> Result<(), HandleClientError>
-where
-    F: Fn(ServiceProviderToServiceUser) -> Fut + Send + Sync + 'static,
-    Fut: Future<Output = ()> + Send + 'static,
-{
-    while let Some(indication) = rx.recv().await {
-        info!("Received indication: {}", <&str>::from(&indication));
-
-        scu_handler(indication).await;
-    }
-
-    info!("All writers out of scope, exiting task");
-    Ok(())
-}
-
-#[instrument(skip_all)]
-async fn scu_to_provider_task(
+async fn scu_to_scp_task(
     mut rx: mpsc::Receiver<ServiceUserToServiceProvider>,
     event_tx: mpsc::Sender<Event>,
 ) -> Result<(), HandleClientError>
@@ -224,8 +200,8 @@ async fn handle_event_task(
 async fn handle_command_task<W>(
     mut writer: W,
     mut rx: mpsc::Receiver<(Command, UpperLayerConnectionState)>,
-    user_connection: mpsc::Sender<ServiceProviderToServiceUser>,
     event_tx: mpsc::Sender<Event>,
+    scp_to_scu_tx: mpsc::Sender<ServiceProviderToServiceUser>
 ) -> Result<(), HandleClientError>
 where
     W: AsyncWrite + Unpin,
@@ -238,7 +214,7 @@ where
         match command {
             // Acceptor and Requestor commands
             Command::AbortIndication(indication) => {
-                user_connection
+                scp_to_scu_tx
                     .send(ServiceProviderToServiceUser::AbortIndication(indication))
                     .await;
 
@@ -247,7 +223,7 @@ where
             }
 
             Command::ProviderAbortIndication(indication) => {
-                user_connection
+                scp_to_scu_tx
                     .send(ServiceProviderToServiceUser::ProviderAbortIndication(indication))
                     .await;
             }
@@ -278,7 +254,7 @@ where
             }
 
             Command::AssociateIndication(indication) => {
-                user_connection
+                scp_to_scu_tx
                     .send(ServiceProviderToServiceUser::AssociateIndication(indication))
                     .await;
             }
@@ -286,6 +262,12 @@ where
             // Requestor commands
             Command::AssociateRequestPdu(pdu) => {
                 stream_write_pdu(DeserializedPdu::AssociateRequest(pdu), &mut writer).await;
+            }
+
+            Command::AssociateConfirmation(prim) => {
+                scp_to_scu_tx
+                    .send(Confirmation::AssociateConfirmation(prim))
+                    .await;
             }
 
             _ => todo!(),

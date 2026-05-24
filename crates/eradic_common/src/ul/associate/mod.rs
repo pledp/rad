@@ -17,7 +17,8 @@ use crate::{
     DeserializedPdu,
     pdu::PduType,
     ul::associate::{
-        abort::deserialize_abort_pdu, presentation_context::PresentationContextError,
+        abort::deserialize_abort_pdu, rj::deserialize_reject_pdu,
+        presentation_context::PresentationContextError,
         syntax::SyntaxItemError,
     },
 };
@@ -111,6 +112,8 @@ pub enum PduDeserializationError {
     #[error(transparent)]
     InvalidAbortPdu(#[from] abort::AbortParseError),
     #[error(transparent)]
+    InvalidRejectPdu(rj::RejectParseError),
+    #[error(transparent)]
     InvalidLength(#[from] std::io::Error),
     #[error(transparent)]
     InvalidEncoding(#[from] std::string::FromUtf8Error),
@@ -129,6 +132,7 @@ where
         }
         PduType::Abort => DeserializedPdu::Abort(deserialize_abort_pdu(reader)?),
         PduType::AssociateAccept => DeserializedPdu::AssociateAccept(deserialize_associate_pdu(reader)?),
+        PduType::AssociateReject => DeserializedPdu::AssociateReject(deserialize_reject_pdu(reader)?),
         _ => todo!()
     })
 }

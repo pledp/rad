@@ -16,11 +16,13 @@ use opentelemetry::trace::TracerProvider as _; // brings .tracer() into scope
 use opentelemetry_otlp::SpanExporter;
 use opentelemetry_sdk::trace::SdkTracerProvider;
 use tokio::sync::mpsc;
+use tokio::task::JoinHandle;
 use tracing::{Level, info};
+use tracing_subscriber::reload::Handle;
 use tracing_subscriber::{fmt, layer::SubscriberExt, util::SubscriberInitExt};
 
 use eradic::ul::event::{Request, ServiceProviderToServiceUser, ServiceUserToServiceProvider};
-use eradic_ul_tokio::{acceptor_handle_client};
+use eradic_ul_tokio::{HandleClientError, acceptor_handle_client};
 
 use crate::service_user::LocalUpperLayerServiceUser;
 
@@ -45,33 +47,25 @@ async fn main() -> Result<()> {
         let client_count_clone = Arc::clone(&client_count);
         let ul_scu_clone = Arc::clone(&ul_scu);
 
-        tokio::spawn(async move {
-            let (scu_tx, scu_rx) = mpsc::channel::<>(32);
-
-            let scu_handler = {
-                move |indication: ServiceProviderToServiceUser| {
-                    let ul_scu_closure = Arc::clone(&ul_scu_clone);
-                    let scu_tx_clone = scu_tx.clone();
-                    async move {
-                        match indication {
-                            ServiceProviderToServiceUser::AssociateIndication(indication) => {
-                                scu_tx_clone.send(
-                                    ServiceUserToServiceProvider::Event(ul_scu_closure.handle_associate_request(indication).await)
-                                ).await;
-                            }
-                            _ => {}
-                        }
-                    }
-                }
-            };
-
+        let _: JoinHandle<std::result::Result<(), HandleClientError>> = tokio::spawn(async move {
             client_count_clone.fetch_add(1, Ordering::AcqRel);
 
-            let result = acceptor_handle_client(tcp, socket_addr, scu_handler, scu_rx).await;
+            let mut handle = acceptor_handle_client(tcp, socket_addr)?;
+
+            while let Some(indication) = handle.scp_to_scu_rx.recv().await {
+                match indication {
+                    ServiceProviderToServiceUser::AssociateIndication(indication) => {
+                        handle.scu_to_scp_tx.send(
+                            ServiceUserToServiceProvider::Event(ul_scu_clone.handle_associate_request(indication).await)
+                        ).await;
+                    }
+                    _ => {}
+                }
+            }
 
             client_count_clone.fetch_sub(1, Ordering::AcqRel);
 
-            result
+            Ok(())
         });
     }
 }

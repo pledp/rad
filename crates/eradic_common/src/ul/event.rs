@@ -3,8 +3,8 @@ use strum_macros::{EnumDiscriminants, IntoStaticStr, Display};
 use thiserror::Error;
 
 use crate::{
-    DeserializedPdu, ul::{associate::{AssociateRqAcPdu, abort::AssociateAbortPdu}, service::{
-        AbortIndication, AssociateRequestConfirmation, AssociateRequestIndication, AssociateRequestResponse, ProviderAbortIndication
+    DeserializedPdu, ul::{associate::{AssociateRqAcPdu, abort::AssociateAbortPdu, rj::AssociateRjPdu}, service::{
+        AbortIndication, AssociateConfirmation, AssociateRequestIndication, AssociateRequestResponse, ProviderAbortIndication
     }}
 };
 
@@ -14,7 +14,7 @@ pub enum Event {
     TransportConnectionIndication,
     ConnectionOpen(AssociateRequestIndication),
     AssociateRequestPdu(AssociateRqAcPdu),
-    AssociateRejectPdu,
+    AssociateRejectPdu(AssociateRjPdu),
     AssociateAcceptPdu(AssociateRqAcPdu),
     DataPdu,
     AssociateAbortPdu(AssociateAbortPdu),
@@ -40,11 +40,10 @@ pub enum Command {
     AssociateIndication(AssociateRequestIndication),
     AbortIndication(AbortIndication),
     ProviderAbortIndication(ProviderAbortIndication),
-    AssociateResponse(AssociateRequestResponse),
     AssociateAcceptPdu(AssociateRqAcPdu),
     AssociateRequestPdu(AssociateRqAcPdu),
 
-    AssociateConfirmation(AssociateRequestConfirmation),
+    AssociateConfirmation(AssociateConfirmation),
 
     // Association Abort Related Actions/Commands
 
@@ -76,6 +75,7 @@ pub type Response = ServiceUserToServiceProvider;
 #[derive(IntoStaticStr)]
 pub enum ServiceProviderToServiceUser {
     AssociateIndication(AssociateRequestIndication),
+    AssociateConfirmation(AssociateConfirmation),
     AbortIndication(AbortIndication),
     ProviderAbortIndication(ProviderAbortIndication)
 }
@@ -106,6 +106,7 @@ pub fn event_from_deserialized_pdu(pdu: DeserializedPdu) -> Event {
         DeserializedPdu::AssociateRequest(inner) => Event::AssociateRequestPdu(inner),
         DeserializedPdu::Abort(inner) => Event::AssociateAbortPdu(inner),
         DeserializedPdu::AssociateAccept(inner) => Event::AssociateAcceptPdu(inner),
+        DeserializedPdu::AssociateReject(inner) => Event::AssociateRejectPdu(inner),
         _ => todo!()
     }
 }

@@ -7,7 +7,7 @@ use crate::ul::{
         abort::{AbortReason, AbortSource, AssociateAbortPdu},
     },
     event::{Command, CommandKind, Event},
-    service::{AbortIndication, AssociateRequestIndication, ProviderAbortIndication},
+    service::{AbortIndication, AssociateConfirmation, AssociateRequestIndication, ProviderAbortIndication, PrimitiveError},
     table::TransitionTable,
 };
 
@@ -15,6 +15,8 @@ use crate::ul::{
 pub enum UpperLayerStateMachineError {
     #[error(transparent)]
     AssociateRqAcFromError(#[from] AssociateRqAcPduError),
+    #[error(transparent)]
+    PrimitiveError(#[from] PrimitiveError),
     #[error("no transition for state={0} event={1}")]
     UnhandledEvent(&'static str, &'static str),
 }
@@ -69,7 +71,7 @@ fn event_as_str(event: &Event) -> &'static str {
         Event::TransportConnectionIndication => "TransportConnectionIndication",
         Event::ConnectionOpen(_) => "ConnectionOpen",
         Event::AssociateRequestPdu(_) => "AssociateRequestPdu",
-        Event::AssociateRejectPdu => "AssociateRejectPdu",
+        Event::AssociateRejectPdu(_) => "AssociateRejectPdu",
         Event::AssociateAcceptPdu(_) => "AssociateAcceptPdu",
         Event::DataPdu => "DataPdu",
         Event::AssociateAbortPdu(_) => "AssociateAbortPdu",
@@ -206,8 +208,16 @@ impl UpperLayerConnection {
 
                     Command::AbortIndication(AbortIndication::from_pdu(pdu))
                 }
-                _ => {
-                    todo!()
+                CommandKind::AssociateConfirmation => {
+                    match event.take().unwrap() {
+                        Event::AssociateAcceptPdu(pdu) => {
+                            Command::AssociateConfirmation(AssociateConfirmation::from_ac_pdu(pdu)?)
+                        }
+                        Event::AssociateRejectPdu(rj) => {
+                            Command::AssociateConfirmation(AssociateConfirmation::from_rj_pdu(rj))
+                        }
+                        _ => panic!("unexpected event for AssociateConfirmation"),
+                    }
                 }
             };
             out.push(cmd);
