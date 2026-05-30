@@ -17,7 +17,7 @@ use tokio::{
 
 use tracing::{info, instrument, warn};
 
-use eradic_common::ul::connection::{UpperLayerConnection, UpperLayerConnectionState};
+use eradic_common::ul::connection::{UpperLayerConnection, UpperLayerConnectionState, handle_event};
 use eradic_common::ul::event::{Command, Confirmation, Event, Request, ServiceProviderToServiceUser, ServiceUserToServiceProvider, event_from_deserialized_pdu};
 
 use crate::artim::artim_task;
@@ -71,7 +71,7 @@ pub async fn handle_connection(
         }
     }
 
-    info!("Ending task");
+    info!("Connection ended");
 
     client_result
 }
@@ -168,8 +168,10 @@ async fn handle_event_task(
                 let Some(event) = event else { break; };
                 info!("Received event: {}", <&str>::from(&event));
 
-                match conn.handle_event(event) {
-                    Ok(commands) => {
+                let state_before = conn.state;
+                match handle_event(conn, event) {
+                    Ok((new_conn, commands)) => {
+                        conn = new_conn;
                         for cmd in commands {
                             let _ = command_tx.send((cmd, conn.state)).await;
                         }
@@ -179,7 +181,7 @@ async fn handle_event_task(
                             Command::ProviderAbortIndication(
                                 ProviderAbortIndication::new(AbortReason::NoReason)
                             ),
-                            conn.state
+                            state_before
                         )).await;
 
                         return Err(e.into());

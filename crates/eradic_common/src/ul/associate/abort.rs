@@ -97,7 +97,7 @@ impl AssociateAbortPdu {
     }
 }
 
-/// Serializes an [AssociateAbortPdu] into a [Vec<u8>].
+/// Serializes an [AssociateAbortPdu] into a [`Vec<u8>`].
 pub fn serialize_abort_pdu(item: &AssociateAbortPdu) -> Vec<u8> {
     let mut pdu: Vec<u8> = Vec::new();
 

@@ -57,6 +57,7 @@ pub enum AssociateItemType {
     AbstractSyntax,
     TransferSyntax,
     MaximumLength,
+    ImplementationClassUid,
 }
 
 impl TryFrom<u8> for AssociateItemType {
@@ -71,6 +72,7 @@ impl TryFrom<u8> for AssociateItemType {
             0x40 => Ok(AssociateItemType::TransferSyntax),
             0x50 => Ok(AssociateItemType::UserInformation),
             0x51 => Ok(AssociateItemType::MaximumLength),
+            0x52 => Ok(AssociateItemType::ImplementationClassUid),
             _ => Err(PduDeserializationError::UnrecognizedItemType(value)),
         }
     }
@@ -86,6 +88,7 @@ impl From<AssociateItemType> for u8 {
             AssociateItemType::TransferSyntax => 0x40,
             AssociateItemType::UserInformation => 0x50,
             AssociateItemType::MaximumLength => 0x51,
+            AssociateItemType::ImplementationClassUid => 0x52,
         }
     }
 }

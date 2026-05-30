@@ -11,7 +11,7 @@ use crate::ul::associate::presentation_context::{
 };
 use crate::ul::associate::syntax::{SyntaxItemError};
 use crate::ul::associate::user_information::{
-    UserInfoItem, UserInformationSubItem, deserialize_user_info_item, serialize_user_info_item,
+    UserInformationItem, UserInformationSubItem, deserialize_user_info_item, serialize_user_info_item,
 };
 use crate::ul::associate::{
     AssociateItemType, ITEM_LENGTH_LENGTH, next_byte_item_type,
@@ -39,7 +39,7 @@ pub struct AssociateRqAcPdu {
     pub(crate) calling_ae: String,
     pub application_context_item: ApplicationContextItem,
     pub presentation_context_items: Vec<PresentationContextItem>,
-    pub(crate) user_info_item: UserInfoItem,
+    pub(crate) user_info_item: UserInformationItem,
 }
 
 impl AssociateRqAcPdu {
@@ -48,7 +48,7 @@ impl AssociateRqAcPdu {
         calling_ae: impl Into<String>,
         application_context_item: ApplicationContextItem,
         presentation_context_items: Vec<PresentationContextItem>,
-        user_info_item: UserInfoItem,
+        user_info_item: UserInformationItem,
     ) -> Self {
         Self::new(PduType::AssociateRequest, called_ae, calling_ae, application_context_item, presentation_context_items, user_info_item)
     }
@@ -58,7 +58,7 @@ impl AssociateRqAcPdu {
         calling_ae: impl Into<String>,
         application_context_item: ApplicationContextItem,
         presentation_context_items: Vec<PresentationContextItem>,
-        user_info_item: UserInfoItem,
+        user_info_item: UserInformationItem,
     ) -> Self {
         Self::new(PduType::AssociateAccept, called_ae, calling_ae, application_context_item, presentation_context_items, user_info_item)
     }
@@ -69,7 +69,7 @@ impl AssociateRqAcPdu {
         calling_ae: impl Into<String>,
         application_context_item: ApplicationContextItem,
         presentation_context_items: Vec<PresentationContextItem>,
-        user_info_item: UserInfoItem,
+        user_info_item: UserInformationItem,
     ) -> Self {
         const NO_VARIABLE_FIELDS_LENGTH: u32 = 68;
 
@@ -196,7 +196,7 @@ pub fn deserialize_associate_pdu<T: Read>(
 
     let mut application_context_item: Option<ApplicationContextItem> = None;
     let mut presentation_context_items: Vec<PresentationContextItem> = Vec::new();
-    let mut user_info_item: Option<UserInfoItem> = None;
+    let mut user_info_item: Option<UserInformationItem> = None;
 
     // While reader is not empty, deserialize items.
     // Makes item ordering flexible. Standard does not define that items must be in certain order.

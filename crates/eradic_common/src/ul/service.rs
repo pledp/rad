@@ -10,7 +10,7 @@ use crate::ul::associate::rj::{AssociateRjPdu, RejectReason, ServiceUserReason};
 use crate::ul::associate::syntax::{SyntaxItem};
 use crate::ul::associate::{
     ApplicationContextItem, AssociateItemType, AssociateRqAcPduError, PduDeserializationError,
-    AssociationResult, UserInfoItem, UserInformationSubItem,
+    AssociationResult, UserInformationItem, UserInformationSubItem,
 };
 use crate::ul::associate::{
     AssociateRqAcPdu, UserInformation, presentation_context::PresentationContextItem,
@@ -18,7 +18,7 @@ use crate::ul::associate::{
 use crate::ul::connection::format_presentation_address;
 
 #[derive(Error, Debug)]
-pub(crate) enum PrimitiveError {
+pub enum PrimitiveError {
     #[error("PresentationContextItem has no result.")]
     NoResult
 }
@@ -77,7 +77,7 @@ impl AssociateRequestIndication {
         let user_information = pdu
             .user_information()
             .iter()
-            .map(|item| *item.inner())
+            .map(|item| item.inner().clone())
             .collect();
 
         Self {
@@ -120,8 +120,8 @@ impl TryFrom<AssociateRequestResponse> for AssociateRqAcPdu {
             );
         }
 
-        let user_info_item = UserInfoItem::new(
-            response.user_information().iter().map(|ui| UserInformationSubItem::new(*ui)).collect()
+        let user_info_item = UserInformationItem::new(
+            response.user_information().iter().map(|ui| UserInformationSubItem::new(ui.clone())).collect()
         );
 
         Ok(Self::new_ac(
@@ -333,7 +333,7 @@ impl AssociateConfirmation {
         let user_information = pdu
             .user_information()
             .iter()
-            .map(|item| *item.inner())
+            .map(|item| item.inner().clone())
             .collect();
 
         Ok(Self {
@@ -399,8 +399,8 @@ impl TryFrom<AssociateRequestIndication> for AssociateRqAcPdu {
             presentation_context_items.push(builder.build()?);
         }
 
-        let user_info_item = UserInfoItem::new(
-            indication.user_information().iter().map(|ui| UserInformationSubItem::new(*ui)).collect()
+        let user_info_item = UserInformationItem::new(
+            indication.user_information().iter().map(|ui| UserInformationSubItem::new(ui.clone())).collect()
         );
 
         Ok(Self::new_rq(

@@ -1,0 +1,61 @@
+// DICOM UL state machine transition table.
+// Each key is a source state. Inner keys are event names, values define the next state and commands to issue.
+(
+    transitions: {
+        Sta1: {
+            TransportConnectionIndication: (to: Sta2, commands: [StartArtimTimer]),
+        },
+        Sta2: {
+            AssociateRequestPdu:                (to: Sta3,  commands: [StopArtimTimer, AssociateIndication]),
+            UnrecognizedPdu:                    (to: Sta13, commands: [AbortPdu, StartArtimTimer]),
+            UnexpectedPdu:                      (to: Sta13, commands: [AbortPdu, StartArtimTimer]),
+            UnrecognizedPduParameter:           (to: Sta13, commands: [AbortPdu, StartArtimTimer]),
+            InvalidPduParameter:                (to: Sta13, commands: [AbortPdu, StartArtimTimer]),
+            UnexpectedPduParameter:             (to: Sta13, commands: [AbortPdu, StartArtimTimer]),
+            TransportConnectionClosedIndication: (to: Sta1, commands: [StopArtimTimer]),
+            ArtimTimerExpired:                  (to: Sta1,  commands: [CloseConnection]),
+        },
+        Sta3: {
+            AssociateResponsePrimitive:         (to: Sta6,  commands: [AssociateAcceptPdu]),
+            UnrecognizedPdu:                    (to: Sta13, commands: [AbortPdu, StartArtimTimer, ProviderAbortIndication]),
+            UnexpectedPdu:                      (to: Sta13, commands: [AbortPdu, StartArtimTimer, ProviderAbortIndication]),
+            UnrecognizedPduParameter:           (to: Sta13, commands: [AbortPdu, StartArtimTimer, ProviderAbortIndication]),
+            InvalidPduParameter:                (to: Sta13, commands: [AbortPdu, StartArtimTimer, ProviderAbortIndication]),
+            UnexpectedPduParameter:             (to: Sta13, commands: [AbortPdu, StartArtimTimer, ProviderAbortIndication]),
+            TransportConnectionClosedIndication: (to: Sta1, commands: [ProviderAbortIndication]),
+            AbortRequest:                       (to: Sta13, commands: [AbortPdu, StartArtimTimer]),
+        },
+        Sta4: {
+            ConnectionOpen:                     (to: Sta5,  commands: [AssociateRequestPdu]),
+        },
+        Sta5: {
+            AssociateAcceptPdu:                 (to: Sta6,  commands: [AssociateConfirmation]),
+            AssociateRejectPdu:                 (to: Sta1,  commands: [AssociateConfirmation]),
+            UnrecognizedPdu:                    (to: Sta13, commands: [AbortPdu, StartArtimTimer, ProviderAbortIndication]),
+            UnexpectedPdu:                      (to: Sta13, commands: [AbortPdu, StartArtimTimer, ProviderAbortIndication]),
+            UnrecognizedPduParameter:           (to: Sta13, commands: [AbortPdu, StartArtimTimer, ProviderAbortIndication]),
+            InvalidPduParameter:                (to: Sta13, commands: [AbortPdu, StartArtimTimer, ProviderAbortIndication]),
+            UnexpectedPduParameter:             (to: Sta13, commands: [AbortPdu, StartArtimTimer, ProviderAbortIndication]),
+            TransportConnectionClosedIndication: (to: Sta1, commands: [ProviderAbortIndication]),
+            AbortRequest:                       (to: Sta13, commands: [AbortPdu, StartArtimTimer]),
+        },
+        Sta6: {
+            UnrecognizedPdu:                    (to: Sta13, commands: [AbortPdu, StartArtimTimer, ProviderAbortIndication]),
+            UnexpectedPdu:                      (to: Sta13, commands: [AbortPdu, StartArtimTimer, ProviderAbortIndication]),
+            UnrecognizedPduParameter:           (to: Sta13, commands: [AbortPdu, StartArtimTimer, ProviderAbortIndication]),
+            InvalidPduParameter:                (to: Sta13, commands: [AbortPdu, StartArtimTimer, ProviderAbortIndication]),
+            UnexpectedPduParameter:             (to: Sta13, commands: [AbortPdu, StartArtimTimer, ProviderAbortIndication]),
+            TransportConnectionClosedIndication: (to: Sta1, commands: [ProviderAbortIndication]),
+            AbortRequest:                       (to: Sta13, commands: [AbortPdu, StartArtimTimer]),
+        },
+        Sta13: {
+            UnrecognizedPdu:                    (to: Sta13, commands: [AbortPdu]),
+            UnexpectedPdu:                      (to: Sta13, commands: [AbortPdu]),
+            UnrecognizedPduParameter:           (to: Sta13, commands: [AbortPdu]),
+            InvalidPduParameter:                (to: Sta13, commands: [AbortPdu]),
+            UnexpectedPduParameter:             (to: Sta13, commands: [AbortPdu]),
+            TransportConnectionClosedIndication: (to: Sta1, commands: [StopArtimTimer]),
+            ArtimTimerExpired:                  (to: Sta1,  commands: [CloseConnection]),
+        },
+    }
+)

@@ -9,7 +9,8 @@ use crate::{
 };
 
 /// DICOM standard events
-#[derive(Debug, PartialEq, IntoStaticStr)]
+#[derive(Debug, PartialEq, IntoStaticStr, EnumDiscriminants)]
+#[strum_discriminants(name(EventKind), derive(serde::Deserialize, Hash))]
 pub enum Event {
     TransportConnectionIndication,
     ConnectionOpen(AssociateRequestIndication),

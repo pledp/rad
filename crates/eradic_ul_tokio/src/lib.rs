@@ -50,7 +50,7 @@ pub fn acceptor_handle_client(
         tcp.local_addr()?.port(),
         socket_addr.ip(),
         socket_addr.port(),
-    );
+    )?;
 
     let (scu_to_scp_tx, scu_to_scp_rx) = mpsc::channel(32);
     let (scp_to_scu_tx, scp_to_scu_rx) = mpsc::channel(32);
@@ -85,7 +85,7 @@ pub fn requestor_handle_connection(
         port,
         socket_addr.ip(),
         socket_addr.port(),
-    );
+    )?;
 
     let (scu_to_scp_tx, scu_to_scp_rx) = mpsc::channel(32);
     let (scp_to_scu_tx, scp_to_scu_rx) = mpsc::channel(32);

@@ -7,7 +7,7 @@ use crate::ul::{
     pdu::{PDU_TYPE_LENGTH, read_padding, vec8_add_padding},
 };
 
-/// Serialize a [SyntaxItem] into [Vec<u8>].
+/// Serialize a [SyntaxItem] into [`Vec<u8>`].
 ///
 /// See [DICOM standard part 8](https://dicom.nema.org/medical/dicom/current/output/html/part08.html#chapter_8)
 pub(crate) fn serialize_syntax_item(item: &SyntaxItem) -> Vec<u8> {
