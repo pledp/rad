@@ -1,3 +1,5 @@
+use std::net::IpAddr;
+
 use strum_macros::{EnumDiscriminants, IntoStaticStr, Display};
 
 use thiserror::Error;
@@ -12,8 +14,20 @@ use crate::{
 #[derive(Debug, PartialEq, IntoStaticStr, EnumDiscriminants)]
 #[strum_discriminants(name(EventKind), derive(serde::Deserialize, Hash))]
 pub enum Event {
-    TransportConnectionIndication,
-    ConnectionOpen(AssociateRequestIndication),
+    AssociateRequest(AssociateRequestIndication),
+    ConnectionOpen {
+        called_address: IpAddr,
+        called_port: u16,
+        calling_address: IpAddr,
+        calling_port: u16,
+    },
+    TransportConnectionIndication {
+        called_address: IpAddr,
+        called_port: u16,
+        calling_address: IpAddr,
+        calling_port: u16,
+    },
+
     AssociateRequestPdu(AssociateRqAcPdu),
     AssociateRejectPdu(AssociateRjPdu),
     AssociateAcceptPdu(AssociateRqAcPdu),
@@ -45,17 +59,17 @@ pub enum Command {
     AssociateRequestPdu(AssociateRqAcPdu),
 
     AssociateConfirmation(AssociateConfirmation),
+    TransportConnectionRequest(String),
 
     // Association Abort Related Actions/Commands
 
-    /// DICOM standard Association Abort action AA-2.
     CloseConnection,
 
-    // Generic command to send AbortPdu, used in AA-1 and AA-7
+    /// Generic command to send AbortPdu
     AbortPdu(AssociateAbortPdu),
-    // Generic command to stop ARTIM timer, used in AE-6, AR-5, AA-2 and AA-5
+    /// Generic command to stop ARTIM timer
     StopArtimTimer,
-    // Generic command to start ARTIM timer, used in AE-5, AE-6, AE-8, AR-4 and AA-8
+    /// Generic command to start ARTIM timer
     StartArtimTimer,
 }
 

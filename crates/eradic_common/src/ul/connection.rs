@@ -58,45 +58,28 @@ fn abort_reason_from_event(event: &Event) -> AbortReason {
 /// See [DICOM standard part 8](https://dicom.nema.org/medical/dicom/current/output/html/part08).
 pub struct UpperLayerConnection {
     pub state: UpperLayerConnectionState,
-    called_address: Option<String>,
-    calling_address: Option<String>,
+    request: Option<AssociateRequestIndication>,
+
+    pub called_address: Option<IpAddr>,
+    called_port: Option<u16>,
+    calling_address: Option<IpAddr>,
+    calling_port: Option<u16>,
+
     table: TransitionTable,
 }
 
 impl UpperLayerConnection {
-    pub fn new_no_assoc() -> Result<Self, UpperLayerStateMachineError> {
+    pub fn new() -> Result<Self, UpperLayerStateMachineError> {
         Ok(Self {
             state: UpperLayerConnectionState::Idle,
+            request: None,
             called_address: None,
+            called_port: None,
             calling_address: None,
+            calling_port: None,
             table: TransitionTable::new()?,
         })
     }
-
-    pub fn new_no_assoc_with_addresses(
-        called_address: IpAddr, called_port: u16,
-        calling_address: IpAddr, calling_port: u16,
-    ) -> Result<Self, UpperLayerStateMachineError> {
-        Ok(Self {
-            state: UpperLayerConnectionState::Idle,
-            called_address: Some(format_presentation_address(called_address, called_port)),
-            calling_address: Some(format_presentation_address(calling_address, calling_port)),
-            table: TransitionTable::new()?,
-        })
-    }
-
-    pub fn new_client(
-        called_address: IpAddr, called_port: u16,
-        calling_address: IpAddr, calling_port: u16,
-    ) -> Result<Self, UpperLayerStateMachineError> {
-        Ok(Self {
-            state: UpperLayerConnectionState::WaitingForOpenConnection,
-            called_address: Some(format_presentation_address(called_address, called_port)),
-            calling_address: Some(format_presentation_address(calling_address, calling_port)),
-            table: TransitionTable::new()?,
-        })
-    }
-
 }
 
 /// Drives the DICOM UL state machine. Transitions are defined in `transitions.ron`.
@@ -117,6 +100,25 @@ pub fn handle_event(
 
     let abort_reason = abort_reason_from_event(&event);
     let mut out = Vec::new();
+
+    match &event {
+        Event::ConnectionOpen { called_address, called_port, calling_address, calling_port } => {
+            conn.called_address = Some(*called_address);
+            conn.called_port = Some(*called_port);
+            conn.calling_address = Some(*calling_address);
+            conn.calling_port = Some(*calling_port);
+        }
+        Event::TransportConnectionIndication { called_address, called_port, calling_address, calling_port } => {
+            conn.called_address = Some(*called_address);
+            conn.called_port = Some(*called_port);
+            conn.calling_address = Some(*calling_address);
+            conn.calling_port = Some(*calling_port);
+        }
+        Event::AssociateRequest(indication) => {
+            conn.request = Some(indication.clone());
+        }
+        _ => {}
+    }
 
     let mut event = Some(event);
 
@@ -140,8 +142,8 @@ pub fn handle_event(
 
                 Command::AssociateIndication(AssociateRequestIndication::from_rq_pdu(
                     pdu,
-                    conn.called_address.clone().unwrap(),
-                    conn.calling_address.clone().unwrap(),
+                    format_presentation_address(conn.called_address.clone().unwrap(), conn.called_port.clone().unwrap()),
+                    format_presentation_address(conn.calling_address.clone().unwrap(), conn.calling_port.clone().unwrap()),
                 ))
             }
             CommandKind::AssociateAcceptPdu => {
@@ -152,11 +154,7 @@ pub fn handle_event(
                 Command::AssociateAcceptPdu(AssociateRqAcPdu::try_from(prim)?)
             }
             CommandKind::AssociateRequestPdu => {
-                let Event::ConnectionOpen(prim) = event.take().unwrap() else {
-                    panic!()
-                };
-
-                Command::AssociateRequestPdu(AssociateRqAcPdu::try_from(prim)?)
+                Command::AssociateRequestPdu(AssociateRqAcPdu::try_from(conn.request.clone().unwrap())?)
             }
             CommandKind::AbortIndication => {
                 let Event::AssociateAbortPdu(pdu) = event.take().unwrap() else {
@@ -176,7 +174,16 @@ pub fn handle_event(
                     _ => panic!("unexpected event for AssociateConfirmation"),
                 }
             }
+
+            CommandKind::TransportConnectionRequest => {
+                let Event::AssociateRequest(request) = event.take().unwrap() else {
+                    panic!()
+                };
+
+                Command::TransportConnectionRequest(request.called_address)
+            }
         };
+
         out.push(cmd);
     }
 

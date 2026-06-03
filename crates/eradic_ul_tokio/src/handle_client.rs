@@ -133,18 +133,21 @@ where
                     }
                     Err(PduDeserializationError::UnrecognizedItemType(item_type)) => {
                         let _ = event_tx.send(Event::UnrecognizedPduParameter).await;
+
                         return Err(HandleClientError::PduDeserializationError(
                             PduDeserializationError::UnrecognizedItemType(item_type)
                         ));
                     }
                     Err(PduDeserializationError::UnexpectedItemType(item_type)) => {
                         let _ = event_tx.send(Event::UnexpectedPduParameter).await;
+
                         return Err(HandleClientError::PduDeserializationError(
                             PduDeserializationError::UnexpectedItemType(item_type)
                         ));
                     }
                     Err(e) => {
                         let _ = event_tx.send(Event::InvalidPduParameter).await;
+
                         return Err(HandleClientError::PduDeserializationError(e));
                     }
                 }
@@ -272,7 +275,7 @@ where
                     .await;
             }
 
-            _ => todo!(),
+            _ => {}
         };
 
         if state == UpperLayerConnectionState::Idle {

@@ -4,6 +4,7 @@
     transitions: {
         Sta1: {
             TransportConnectionIndication: (to: Sta2, commands: [StartArtimTimer]),
+            AssociateRequest: (to: Sta4, commands: [TransportConnectionRequest]),
         },
         Sta2: {
             AssociateRequestPdu:                (to: Sta3,  commands: [StopArtimTimer, AssociateIndication]),

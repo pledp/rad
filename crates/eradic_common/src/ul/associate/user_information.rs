@@ -373,177 +373,180 @@ mod tests {
     }
 
     // [`UserInformationItem`] tests
+    mod user_information_item {
+        use super::*;
 
-    #[test]
-    fn test_serialize_user_info_item_ok() {
-        let item = UserInformationItem::new(vec![UserInformationSubItem::new(
-            UserInformation::MaximumLength(MaximumLength { maximum_length: 16384 }),
-        )]);
+        #[test]
+        fn test_serialize_user_info_item_ok() {
+            let item = UserInformationItem::new(vec![UserInformationSubItem::new(
+                UserInformation::MaximumLength(MaximumLength { maximum_length: 16384 }),
+            )]);
 
-        assert_eq!(
-            serialize_user_info_item(&item),
-            vec![
+            assert_eq!(
+                serialize_user_info_item(&item),
+                vec![
+                    0x50, 0x00, 0x00, 0x08, // UserInformation type, padding, length=8
+                    0x51, 0x00, 0x00, 0x04, 0x00, 0x00, 0x40, 0x00, // MaximumLength(16384)
+                ]
+            );
+        }
+
+        #[test]
+        fn test_serialize_user_info_item_no_sub_items() {
+            let item = UserInformationItem::new(vec![]);
+
+            assert_eq!(
+                serialize_user_info_item(&item),
+                vec![0x50, 0x00, 0x00, 0x00]
+            );
+        }
+
+        #[test]
+        fn test_serialize_user_info_item_multiple_sub_items() {
+            let item = UserInformationItem::new(vec![
+                UserInformationSubItem::new(UserInformation::MaximumLength(MaximumLength {
+                    maximum_length: 16384,
+                })),
+                UserInformationSubItem::new(UserInformation::MaximumLength(MaximumLength {
+                    maximum_length: u32::MAX,
+                })),
+            ]);
+
+            assert_eq!(
+                serialize_user_info_item(&item),
+                vec![
+                    0x50, 0x00, 0x00, 0x10, // length=16 (two sub-items at 8 bytes each)
+                    0x51, 0x00, 0x00, 0x04, 0x00, 0x00, 0x40, 0x00,
+                    0x51, 0x00, 0x00, 0x04, 0xFF, 0xFF, 0xFF, 0xFF,
+                ]
+            );
+        }
+
+        #[test]
+        fn test_serialize_user_info_item_round_trip() {
+            let item = UserInformationItem::new(vec![UserInformationSubItem::new(
+                UserInformation::MaximumLength(MaximumLength { maximum_length: 16384 }),
+            )]);
+
+            let serialized = serialize_user_info_item(&item);
+            let deserialized =
+                deserialize_user_info_item(&mut Cursor::new(serialized)).unwrap();
+
+            assert_eq!(item, deserialized);
+        }
+
+        #[test]
+        fn test_deserialize_user_info_item_ok() {
+            let mut data = Cursor::new(vec![
                 0x50, 0x00, 0x00, 0x08, // UserInformation type, padding, length=8
                 0x51, 0x00, 0x00, 0x04, 0x00, 0x00, 0x40, 0x00, // MaximumLength(16384)
-            ]
-        );
-    }
+            ]);
 
-    #[test]
-    fn test_serialize_user_info_item_no_sub_items() {
-        let item = UserInformationItem::new(vec![]);
+            let expected = UserInformationItem::new(vec![UserInformationSubItem::new(
+                UserInformation::MaximumLength(MaximumLength { maximum_length: 16384 }),
+            )]);
 
-        assert_eq!(
-            serialize_user_info_item(&item),
-            vec![0x50, 0x00, 0x00, 0x00]
-        );
-    }
+            assert_eq!(expected, deserialize_user_info_item(&mut data).unwrap());
+        }
 
-    #[test]
-    fn test_serialize_user_info_item_multiple_sub_items() {
-        let item = UserInformationItem::new(vec![
-            UserInformationSubItem::new(UserInformation::MaximumLength(MaximumLength {
-                maximum_length: 16384,
-            })),
-            UserInformationSubItem::new(UserInformation::MaximumLength(MaximumLength {
-                maximum_length: u32::MAX,
-            })),
-        ]);
+        #[test]
+        fn test_deserialize_user_info_item_no_sub_items() {
+            let mut data = Cursor::new(vec![0x50, 0x00, 0x00, 0x00]);
 
-        assert_eq!(
-            serialize_user_info_item(&item),
-            vec![
-                0x50, 0x00, 0x00, 0x10, // length=16 (two sub-items at 8 bytes each)
+            assert_eq!(
+                UserInformationItem::new(vec![]),
+                deserialize_user_info_item(&mut data).unwrap()
+            );
+        }
+
+        #[test]
+        fn test_deserialize_user_info_item_multiple_sub_items() {
+            let mut data = Cursor::new(vec![
+                0x50, 0x00, 0x00, 0x10,
                 0x51, 0x00, 0x00, 0x04, 0x00, 0x00, 0x40, 0x00,
                 0x51, 0x00, 0x00, 0x04, 0xFF, 0xFF, 0xFF, 0xFF,
-            ]
-        );
-    }
+            ]);
 
-    #[test]
-    fn test_serialize_user_info_item_round_trip() {
-        let item = UserInformationItem::new(vec![UserInformationSubItem::new(
-            UserInformation::MaximumLength(MaximumLength { maximum_length: 16384 }),
-        )]);
+            let expected = UserInformationItem::new(vec![
+                UserInformationSubItem::new(UserInformation::MaximumLength(MaximumLength {
+                    maximum_length: 16384,
+                })),
+                UserInformationSubItem::new(UserInformation::MaximumLength(MaximumLength {
+                    maximum_length: u32::MAX,
+                })),
+            ]);
 
-        let serialized = serialize_user_info_item(&item);
-        let deserialized =
-            deserialize_user_info_item(&mut Cursor::new(serialized)).unwrap();
+            assert_eq!(expected, deserialize_user_info_item(&mut data).unwrap());
+        }
 
-        assert_eq!(item, deserialized);
-    }
+        #[test]
+        fn test_deserialize_user_info_item_truncated_at_item_type() {
+            let mut data = Cursor::new(vec![]);
 
-    #[test]
-    fn test_deserialize_user_info_item_ok() {
-        let mut data = Cursor::new(vec![
-            0x50, 0x00, 0x00, 0x08, // UserInformation type, padding, length=8
-            0x51, 0x00, 0x00, 0x04, 0x00, 0x00, 0x40, 0x00, // MaximumLength(16384)
-        ]);
+            assert!(matches!(
+                deserialize_user_info_item(&mut data),
+                Err(PduDeserializationError::InvalidLength(_))
+            ));
+        }
 
-        let expected = UserInformationItem::new(vec![UserInformationSubItem::new(
-            UserInformation::MaximumLength(MaximumLength { maximum_length: 16384 }),
-        )]);
+        #[test]
+        fn test_deserialize_user_info_item_truncated_at_item_length() {
+            // item_type + padding only, no room for item_length field
+            let mut data = Cursor::new(vec![0x50, 0x00]);
 
-        assert_eq!(expected, deserialize_user_info_item(&mut data).unwrap());
-    }
+            assert!(matches!(
+                deserialize_user_info_item(&mut data),
+                Err(PduDeserializationError::InvalidLength(_))
+            ));
+        }
 
-    #[test]
-    fn test_deserialize_user_info_item_no_sub_items() {
-        let mut data = Cursor::new(vec![0x50, 0x00, 0x00, 0x00]);
-
-        assert_eq!(
-            UserInformationItem::new(vec![]),
-            deserialize_user_info_item(&mut data).unwrap()
-        );
-    }
-
-    #[test]
-    fn test_deserialize_user_info_item_multiple_sub_items() {
-        let mut data = Cursor::new(vec![
-            0x50, 0x00, 0x00, 0x10,
-            0x51, 0x00, 0x00, 0x04, 0x00, 0x00, 0x40, 0x00,
-            0x51, 0x00, 0x00, 0x04, 0xFF, 0xFF, 0xFF, 0xFF,
-        ]);
-
-        let expected = UserInformationItem::new(vec![
-            UserInformationSubItem::new(UserInformation::MaximumLength(MaximumLength {
-                maximum_length: 16384,
-            })),
-            UserInformationSubItem::new(UserInformation::MaximumLength(MaximumLength {
-                maximum_length: u32::MAX,
-            })),
-        ]);
-
-        assert_eq!(expected, deserialize_user_info_item(&mut data).unwrap());
-    }
-
-    #[test]
-    fn test_deserialize_user_info_item_truncated_at_item_type() {
-        let mut data = Cursor::new(vec![]);
-
-        assert!(matches!(
-            deserialize_user_info_item(&mut data),
-            Err(PduDeserializationError::InvalidLength(_))
-        ));
-    }
-
-    #[test]
-    fn test_deserialize_user_info_item_truncated_at_item_length() {
-        // item_type + padding only, no room for item_length field
-        let mut data = Cursor::new(vec![0x50, 0x00]);
-
-        assert!(matches!(
-            deserialize_user_info_item(&mut data),
-            Err(PduDeserializationError::InvalidLength(_))
-        ));
-    }
-
-    #[test]
-    fn test_deserialize_user_info_item_unrecognized_item_type() {
-        let mut data = Cursor::new(vec![
-            0x80, 0x00, 0x00, 0x08,
-            0x51, 0x00, 0x00, 0x04, 0x00, 0x00, 0x40, 0x00,
-        ]);
-
-        assert!(matches!(
-            deserialize_user_info_item(&mut data),
-            Err(PduDeserializationError::UnrecognizedItemType(_))
-        ));
-    }
-
-    #[test]
-    fn test_deserialize_user_info_item_unexpected_item_type() {
-        let cases = [
-            (0x10, AssociateItemType::ApplicationContext),
-            (0x40, AssociateItemType::TransferSyntax),
-            (0x51, AssociateItemType::MaximumLength),
-        ];
-
-        for (byte, expected_type) in cases {
+        #[test]
+        fn test_deserialize_user_info_item_unrecognized_item_type() {
             let mut data = Cursor::new(vec![
-                byte, 0x00, 0x00, 0x08,
+                0x80, 0x00, 0x00, 0x08,
                 0x51, 0x00, 0x00, 0x04, 0x00, 0x00, 0x40, 0x00,
             ]);
 
             assert!(matches!(
                 deserialize_user_info_item(&mut data),
-                Err(PduDeserializationError::UnexpectedItemType(t)) if t == expected_type
+                Err(PduDeserializationError::UnrecognizedItemType(_))
             ));
         }
-    }
 
-    #[test]
-    fn test_deserialize_user_info_item_invalid_sub_item_type() {
-        // Outer header valid, but sub-item body contains an unrecognized type byte
-        let mut data = Cursor::new(vec![
-            0x50, 0x00, 0x00, 0x08,
-            0x80, 0x00, 0x00, 0x04, 0x00, 0x00, 0x40, 0x00,
-        ]);
+        #[test]
+        fn test_deserialize_user_info_item_unexpected_item_type() {
+            let cases = [
+                (0x10, AssociateItemType::ApplicationContext),
+                (0x40, AssociateItemType::TransferSyntax),
+                (0x51, AssociateItemType::MaximumLength),
+            ];
 
-        assert!(matches!(
-            deserialize_user_info_item(&mut data),
-            Err(PduDeserializationError::UnrecognizedItemType(_))
-        ));
+            for (byte, expected_type) in cases {
+                let mut data = Cursor::new(vec![
+                    byte, 0x00, 0x00, 0x08,
+                    0x51, 0x00, 0x00, 0x04, 0x00, 0x00, 0x40, 0x00,
+                ]);
+
+                assert!(matches!(
+                    deserialize_user_info_item(&mut data),
+                    Err(PduDeserializationError::UnexpectedItemType(t)) if t == expected_type
+                ));
+            }
+        }
+
+        #[test]
+        fn test_deserialize_user_info_item_invalid_sub_item_type() {
+            // Outer header valid, but sub-item body contains an unrecognized type byte
+            let mut data = Cursor::new(vec![
+                0x50, 0x00, 0x00, 0x08,
+                0x80, 0x00, 0x00, 0x04, 0x00, 0x00, 0x40, 0x00,
+            ]);
+
+            assert!(matches!(
+                deserialize_user_info_item(&mut data),
+                Err(PduDeserializationError::UnrecognizedItemType(_))
+            ));
+        }
     }
 
     #[test]

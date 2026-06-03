@@ -47,8 +47,10 @@ impl AssociateRequestIndication {
         called_ae: String,
         calling_ae: String,
         user_information: Vec<UserInformation>,
-        called_address: String,
-        calling_address: String,
+        called_address: IpAddr,
+        called_port: u16,
+        calling_address: IpAddr,
+        calling_port: u16,
         presentation_context: Vec<PresentationContextDefinitionList>,
     ) -> Self {
         Self {
@@ -56,8 +58,8 @@ impl AssociateRequestIndication {
             called_ae,
             calling_ae,
             user_information,
-            called_address,
-            calling_address,
+            called_address: format_presentation_address(called_address, called_port),
+            calling_address: format_presentation_address(calling_address, calling_port),
             presentation_context,
         }
     }

@@ -14,13 +14,15 @@ use tracing_log::log::info;
 use core::net::SocketAddr;
 
 use tokio::net::{TcpStream};
+use tokio::task::JoinHandle;
 use tracing::{instrument};
 
 use crate::handle_client::handle_connection;
 
 pub struct UpperLayerHandle {
     pub scu_to_scp_tx: mpsc::Sender<ServiceUserToServiceProvider>,
-    pub scp_to_scu_rx: mpsc::Receiver<ServiceProviderToServiceUser>
+    pub scp_to_scu_rx: mpsc::Receiver<ServiceProviderToServiceUser>,
+    pub task: JoinHandle<Result<(), HandleClientError>>,
 }
 
 #[derive(Debug, Error)]
@@ -45,28 +47,31 @@ pub fn acceptor_handle_client(
         socket_addr.port()
     );
 
-    let connection = UpperLayerConnection::new_no_assoc_with_addresses(
-        tcp.local_addr()?.ip(),
-        tcp.local_addr()?.port(),
-        socket_addr.ip(),
-        socket_addr.port(),
-    )?;
+    let ip = tcp.local_addr()?.ip();
+    let port = tcp.local_addr()?.port();
+
+    let connection = UpperLayerConnection::new()?;
 
     let (scu_to_scp_tx, scu_to_scp_rx) = mpsc::channel(32);
     let (scp_to_scu_tx, scp_to_scu_rx) = mpsc::channel(32);
 
-    tokio::spawn(handle_connection(
+    let task = tokio::spawn(handle_connection(
         tcp,
         socket_addr,
         connection,
         scp_to_scu_tx,
         scu_to_scp_rx,
         vec![
-            Event::TransportConnectionIndication
+            Event::TransportConnectionIndication {
+                called_address: ip,
+                called_port: port,
+                calling_address: socket_addr.ip(),
+                calling_port: socket_addr.port(),
+            }
         ]
     ));
 
-    Ok(UpperLayerHandle { scu_to_scp_tx, scp_to_scu_rx })
+    Ok(UpperLayerHandle { scu_to_scp_tx, scp_to_scu_rx, task })
 }
 
 #[instrument(skip(tcp, request) fields(ip = %socket_addr.ip(), port = %socket_addr.port()))]
@@ -80,26 +85,27 @@ pub fn requestor_handle_connection(
     let ip = tcp.local_addr()?.ip();
     let port = tcp.local_addr()?.port();
 
-    let connection = UpperLayerConnection::new_client(
-        ip,
-        port,
-        socket_addr.ip(),
-        socket_addr.port(),
-    )?;
+    let connection = UpperLayerConnection::new()?;
 
     let (scu_to_scp_tx, scu_to_scp_rx) = mpsc::channel(32);
     let (scp_to_scu_tx, scp_to_scu_rx) = mpsc::channel(32);
 
-    tokio::spawn(handle_connection(
+    let task = tokio::spawn(handle_connection(
         tcp,
         socket_addr,
         connection,
         scp_to_scu_tx,
         scu_to_scp_rx,
         vec![
-            Event::ConnectionOpen(request),
+            Event::AssociateRequest(request),
+            Event::ConnectionOpen {
+                called_address: ip,
+                called_port: port,
+                calling_address: socket_addr.ip(),
+                calling_port: socket_addr.port(),
+            },
         ]
     ));
 
-    Ok(UpperLayerHandle { scu_to_scp_tx, scp_to_scu_rx })
+    Ok(UpperLayerHandle { scu_to_scp_tx, scp_to_scu_rx, task })
 }
