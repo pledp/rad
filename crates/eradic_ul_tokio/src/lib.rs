@@ -4,7 +4,7 @@ mod handle_client;
 use eradic_common::ul::associate::{AssociateRqAcPdu};
 use eradic_common::ul::connection::UpperLayerStateMachineError;
 use eradic_common::ul::event::{Command, Request, ServiceUserToServiceProvider};
-use eradic_common::ul::service::{AssociateRequestIndication};
+use eradic_common::ul::service::{AssociateRequestIndicationPrimitive};
 use eradic_common::ul::{associate::PduDeserializationError, connection::{UpperLayerConnection}, event::{Event, ServiceProviderToServiceUser}};
 
 use thiserror::Error;
@@ -19,6 +19,7 @@ use tracing::{instrument};
 
 use crate::handle_client::handle_connection;
 
+/// Handle for various resources related to the association, including the Tokio task and channels for communication.
 pub struct UpperLayerHandle {
     pub scu_to_scp_tx: mpsc::Sender<ServiceUserToServiceProvider>,
     pub scp_to_scu_rx: mpsc::Receiver<ServiceProviderToServiceUser>,
@@ -78,7 +79,7 @@ pub fn acceptor_handle_client(
 pub fn requestor_handle_connection(
     tcp: TcpStream,
     socket_addr: SocketAddr,
-    request: AssociateRequestIndication,
+    request: AssociateRequestIndicationPrimitive,
 ) -> Result<UpperLayerHandle, HandleClientError>
 {
 
@@ -97,8 +98,8 @@ pub fn requestor_handle_connection(
         scp_to_scu_tx,
         scu_to_scp_rx,
         vec![
-            Event::AssociateRequest(request),
-            Event::ConnectionOpen {
+            Event::AssociateRequestPrimitive(request),
+            Event::TransportConnectionConfirmation {
                 called_address: ip,
                 called_port: port,
                 calling_address: socket_addr.ip(),

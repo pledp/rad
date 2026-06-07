@@ -6,7 +6,7 @@ use thiserror::Error;
 
 use crate::{
     DeserializedPdu, ul::{associate::{AssociateRqAcPdu, abort::AssociateAbortPdu, rj::AssociateRjPdu}, service::{
-        AbortIndication, AssociateConfirmation, AssociateRequestIndication, AssociateRequestResponse, ProviderAbortIndication
+        AbortIndicationPrimitive, AssociateConfirmationPrimitive, AssociateRequestIndicationPrimitive, AssociateRequestResponsePrimitive, ProviderAbortIndicationPrimitive
     }}
 };
 
@@ -14,13 +14,13 @@ use crate::{
 #[derive(Debug, PartialEq, IntoStaticStr, EnumDiscriminants)]
 #[strum_discriminants(name(EventKind), derive(serde::Deserialize, Hash))]
 pub enum Event {
-    AssociateRequest(AssociateRequestIndication),
-    ConnectionOpen {
+    TransportConnectionConfirmation {
         called_address: IpAddr,
         called_port: u16,
         calling_address: IpAddr,
         calling_port: u16,
     },
+
     TransportConnectionIndication {
         called_address: IpAddr,
         called_port: u16,
@@ -33,8 +33,8 @@ pub enum Event {
     AssociateAcceptPdu(AssociateRqAcPdu),
     DataPdu,
     AssociateAbortPdu(AssociateAbortPdu),
-    AssociateRequestPrimitive(AssociateRequestIndication),
-    AssociateResponsePrimitive(AssociateRequestResponse),
+    AssociateRequestPrimitive(AssociateRequestIndicationPrimitive),
+    AssociateResponsePrimitive(AssociateRequestResponsePrimitive),
     TransportConnectionClosedIndication,
 
     // Abort events
@@ -43,7 +43,7 @@ pub enum Event {
     UnrecognizedPduParameter,
     UnexpectedPduParameter,
     InvalidPduParameter,
-    AbortRequest,
+    AbortRequestPrimitive,
 
     ArtimTimerExpired,
 }
@@ -52,17 +52,16 @@ pub enum Event {
 #[derive(IntoStaticStr, Display, Debug, EnumDiscriminants)]
 #[strum_discriminants(name(CommandKind), derive(serde::Deserialize))]
 pub enum Command {
-    AssociateIndication(AssociateRequestIndication),
-    AbortIndication(AbortIndication),
-    ProviderAbortIndication(ProviderAbortIndication),
+    AssociateIndicationPrimitive(AssociateRequestIndicationPrimitive),
+    AbortIndicationPrimitive(AbortIndicationPrimitive),
+    ProviderAbortIndicationPrimitive(ProviderAbortIndicationPrimitive),
     AssociateAcceptPdu(AssociateRqAcPdu),
     AssociateRequestPdu(AssociateRqAcPdu),
 
-    AssociateConfirmation(AssociateConfirmation),
+    AssociateConfirmationPrimitive(AssociateConfirmationPrimitive),
     TransportConnectionRequest(String),
 
     // Association Abort Related Actions/Commands
-
     CloseConnection,
 
     /// Generic command to send AbortPdu
@@ -81,7 +80,8 @@ pub enum IndicationError {
 
 pub enum ServiceUserToServiceProvider {
     AbortRequest,
-    Event(Event)
+    AssociateRequestPrimitive(AssociateRequestIndicationPrimitive),
+    AssociateResponsePrimitive(AssociateRequestResponsePrimitive),
 }
 
 pub type Request = ServiceUserToServiceProvider;
@@ -89,10 +89,10 @@ pub type Response = ServiceUserToServiceProvider;
 
 #[derive(IntoStaticStr)]
 pub enum ServiceProviderToServiceUser {
-    AssociateIndication(AssociateRequestIndication),
-    AssociateConfirmation(AssociateConfirmation),
-    AbortIndication(AbortIndication),
-    ProviderAbortIndication(ProviderAbortIndication)
+    AssociateIndicationPrimitive(AssociateRequestIndicationPrimitive),
+    AssociateConfirmationPrimitive(AssociateConfirmationPrimitive),
+    AbortIndicationPrimitive(AbortIndicationPrimitive),
+    ProviderAbortIndicationPrimitive(ProviderAbortIndicationPrimitive)
 }
 
 pub type Indication = ServiceProviderToServiceUser;
@@ -101,12 +101,12 @@ pub type Confirmation = ServiceProviderToServiceUser;
 impl ServiceProviderToServiceUser {
     pub fn from_command(cmd: Command) -> Result<Self, IndicationError> {
         match cmd {
-            Command::AssociateIndication(inner) => {
-                Ok(Self::AssociateIndication(inner))
+            Command::AssociateIndicationPrimitive(inner) => {
+                Ok(Self::AssociateIndicationPrimitive(inner))
             }
 
-            Command::AbortIndication(inner) => {
-                Ok(Self::AbortIndication(inner))
+            Command::AbortIndicationPrimitive(inner) => {
+                Ok(Self::AbortIndicationPrimitive(inner))
             }
 
             _ => {

@@ -5,7 +5,7 @@ use eradic_common::DeserializedPdu;
 use eradic_common::ul::associate::abort::{AbortReason, serialize_abort_pdu};
 use eradic_common::ul::associate::{PduDeserializationError, deserialized_pdu_from_reader, serialize_associate_pdu};
 use eradic_common::ul::pdu::{PDU_HEADER_LENGTH, PduType, read_pdu_header};
-use eradic_common::ul::service::ProviderAbortIndication;
+use eradic_common::ul::service::ProviderAbortIndicationPrimitive;
 use thiserror::Error;
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use tokio::sync::oneshot;
@@ -87,11 +87,14 @@ async fn scu_to_scp_task(
             request = rx.recv() => {
                 let Some(item) = request else { break; };
                 match item {
-                    Request::AbortRequest => {
-                        event_tx.send(Event::AbortRequest).await;
+                    ServiceUserToServiceProvider::AbortRequest => {
+                        event_tx.send(Event::AbortRequestPrimitive).await;
                     }
-                    ServiceUserToServiceProvider::Event(event) => {
-                        event_tx.send(event).await;
+                    ServiceUserToServiceProvider::AssociateRequestPrimitive(request) => {
+                        event_tx.send(Event::AssociateRequestPrimitive(request)).await;
+                    }
+                    ServiceUserToServiceProvider::AssociateResponsePrimitive(response) => {
+                        event_tx.send(Event::AssociateResponsePrimitive(response)).await;
                     }
                 }
             }
@@ -181,8 +184,8 @@ async fn handle_event_task(
                     }
                     Err(e) => {
                         let _ = command_tx.send((
-                            Command::ProviderAbortIndication(
-                                ProviderAbortIndication::new(AbortReason::NoReason)
+                            Command::ProviderAbortIndicationPrimitive(
+                                ProviderAbortIndicationPrimitive::new(AbortReason::NoReason)
                             ),
                             state_before
                         )).await;
@@ -218,18 +221,18 @@ where
 
         match command {
             // Acceptor and Requestor commands
-            Command::AbortIndication(indication) => {
+            Command::AbortIndicationPrimitive(indication) => {
                 scp_to_scu_tx
-                    .send(ServiceProviderToServiceUser::AbortIndication(indication))
+                    .send(ServiceProviderToServiceUser::AbortIndicationPrimitive(indication))
                     .await;
 
                 writer.shutdown().await;
                 return Ok(());
             }
 
-            Command::ProviderAbortIndication(indication) => {
+            Command::ProviderAbortIndicationPrimitive(indication) => {
                 scp_to_scu_tx
-                    .send(ServiceProviderToServiceUser::ProviderAbortIndication(indication))
+                    .send(ServiceProviderToServiceUser::ProviderAbortIndicationPrimitive(indication))
                     .await;
             }
 
@@ -258,9 +261,9 @@ where
                 stream_write_pdu(DeserializedPdu::AssociateAccept(pdu), &mut writer).await;
             }
 
-            Command::AssociateIndication(indication) => {
+            Command::AssociateIndicationPrimitive(indication) => {
                 scp_to_scu_tx
-                    .send(ServiceProviderToServiceUser::AssociateIndication(indication))
+                    .send(ServiceProviderToServiceUser::AssociateIndicationPrimitive(indication))
                     .await;
             }
 
@@ -269,9 +272,9 @@ where
                 stream_write_pdu(DeserializedPdu::AssociateRequest(pdu), &mut writer).await;
             }
 
-            Command::AssociateConfirmation(prim) => {
+            Command::AssociateConfirmationPrimitive(prim) => {
                 scp_to_scu_tx
-                    .send(Confirmation::AssociateConfirmation(prim))
+                    .send(Confirmation::AssociateConfirmationPrimitive(prim))
                     .await;
             }
 

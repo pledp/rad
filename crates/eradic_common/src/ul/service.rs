@@ -24,14 +24,14 @@ pub enum PrimitiveError {
 }
 
 
-pub type AssociateRequest = AssociateRequestIndication;
-pub type AssociateIndication = AssociateRequestIndication;
+pub type AssociateRequest = AssociateRequestIndicationPrimitive;
+pub type AssociateIndication = AssociateRequestIndicationPrimitive;
 
 /// DICOM ISO/TR 8509 request and indication primitive. Request and indication contain the same fields.
 ///
 /// Indicates a request to establish an Associate or an Indication of a A-ASSOCIATE-RQ PDU.
 #[derive(Clone, Debug, PartialEq)]
-pub struct AssociateRequestIndication {
+pub struct AssociateRequestIndicationPrimitive {
     pub context_name: String,
     pub called_ae: String,
     pub calling_ae: String,
@@ -41,7 +41,7 @@ pub struct AssociateRequestIndication {
     pub presentation_context: Vec<PresentationContextDefinitionList>,
 }
 
-impl AssociateRequestIndication {
+impl AssociateRequestIndicationPrimitive {
     pub fn new(
         context_name: String,
         called_ae: String,
@@ -102,10 +102,10 @@ impl AssociateRequestIndication {
     }
 }
 
-impl TryFrom<AssociateRequestResponse> for AssociateRqAcPdu {
+impl TryFrom<AssociateRequestResponsePrimitive> for AssociateRqAcPdu {
     type Error = AssociateRqAcPduError;
 
-    fn try_from(response: AssociateRequestResponse) -> Result<Self, Self::Error> {
+    fn try_from(response: AssociateRequestResponsePrimitive) -> Result<Self, Self::Error> {
         let mut presentation_context_items = Vec::new();
 
         for context in response.presentation_context_result() {
@@ -274,7 +274,7 @@ impl PresentationContextDefinitionListBuilder {
 }
 
 #[derive(Debug, PartialEq)]
-pub struct AssociateRequestResponse {
+pub struct AssociateRequestResponsePrimitive {
     pub context_name: String,
     pub called_ae: String,
     pub calling_ae: String,
@@ -284,7 +284,7 @@ pub struct AssociateRequestResponse {
     pub result: Option<AssociationResult>,
 }
 
-impl AssociateRequestResponse {
+impl AssociateRequestResponsePrimitive {
     pub fn presentation_context_result(&self) -> &Vec<PresentationContextDefinitionResult> {
         &self.presentation_context_result
     }
@@ -295,7 +295,7 @@ impl AssociateRequestResponse {
 }
 
 #[derive(Debug, PartialEq)]
-pub struct AssociateConfirmation {
+pub struct AssociateConfirmationPrimitive {
     pub context_name: String,
     pub called_ae: String,
     pub calling_ae: String,
@@ -305,7 +305,7 @@ pub struct AssociateConfirmation {
     pub presentation_context_result: Vec<PresentationContextDefinitionResult>,
 }
 
-impl AssociateConfirmation {
+impl AssociateConfirmationPrimitive {
     pub fn from_rj_pdu(pdu: AssociateRjPdu) -> Self {
         let diagnostic = match pdu.reason {
             Some(RejectReason::ServiceUser(r)) => Some(r),
@@ -351,22 +351,22 @@ impl AssociateConfirmation {
 }
 
 #[derive(Debug, PartialEq)]
-pub struct ProviderAbortIndication {
+pub struct ProviderAbortIndicationPrimitive {
     reason: AbortReason,
 }
 
-impl ProviderAbortIndication {
+impl ProviderAbortIndicationPrimitive {
     pub fn new(reason: AbortReason) -> Self {
         Self { reason }
     }
 }
 
 #[derive(Debug, PartialEq)]
-pub struct AbortIndication {
+pub struct AbortIndicationPrimitive {
     source: AbortSource,
 }
 
-impl AbortIndication {
+impl AbortIndicationPrimitive {
     pub fn new(source: AbortSource) -> Self {
         Self { source }
     }
@@ -376,10 +376,10 @@ impl AbortIndication {
     }
 }
 
-impl TryFrom<AssociateRequestIndication> for AssociateRqAcPdu {
+impl TryFrom<AssociateRequestIndicationPrimitive> for AssociateRqAcPdu {
     type Error = AssociateRqAcPduError;
 
-    fn try_from(indication: AssociateRequestIndication) -> Result<Self, Self::Error> {
+    fn try_from(indication: AssociateRequestIndicationPrimitive) -> Result<Self, Self::Error> {
         let mut presentation_context_items = Vec::new();
 
         for context in indication.presentation_context() {

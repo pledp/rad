@@ -1,9 +1,5 @@
 mod service_user;
 
-use core::net::SocketAddr;
-use std::io::Cursor;
-use std::net::IpAddr;
-use std::string::String;
 use std::sync::{
     Arc,
     atomic::{AtomicI64, Ordering},
@@ -15,13 +11,11 @@ use opentelemetry::global;
 use opentelemetry::trace::TracerProvider as _; // brings .tracer() into scope
 use opentelemetry_otlp::SpanExporter;
 use opentelemetry_sdk::trace::SdkTracerProvider;
-use tokio::sync::mpsc;
 use tokio::task::JoinHandle;
-use tracing::{Level, info};
-use tracing_subscriber::reload::Handle;
+use tracing::{info};
 use tracing_subscriber::{fmt, layer::SubscriberExt, util::SubscriberInitExt};
 
-use eradic::ul::event::{Request, ServiceProviderToServiceUser, ServiceUserToServiceProvider};
+use eradic::ul::event::{ServiceProviderToServiceUser, ServiceUserToServiceProvider};
 use eradic_ul_tokio::{HandleClientError, acceptor_handle_client};
 
 use crate::service_user::LocalUpperLayerServiceUser;
@@ -54,9 +48,9 @@ async fn main() -> Result<()> {
 
             while let Some(indication) = handle.scp_to_scu_rx.recv().await {
                 match indication {
-                    ServiceProviderToServiceUser::AssociateIndication(indication) => {
+                    ServiceProviderToServiceUser::AssociateIndicationPrimitive(indication) => {
                         handle.scu_to_scp_tx.send(
-                            ServiceUserToServiceProvider::Event(ul_scu_clone.handle_associate_request(indication).await)
+                            ServiceUserToServiceProvider::AssociateResponsePrimitive(ul_scu_clone.handle_associate_request(indication).await)
                         ).await;
                     }
                     _ => {}

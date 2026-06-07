@@ -8,7 +8,7 @@ use crate::ul::{
         abort::{AbortReason, AbortSource, AssociateAbortPdu},
     },
     event::{Command, CommandKind, Event, EventKind},
-    service::{AbortIndication, AssociateConfirmation, AssociateRequestIndication, ProviderAbortIndication, PrimitiveError},
+    service::{AbortIndicationPrimitive, AssociateConfirmationPrimitive, AssociateRequestIndicationPrimitive, ProviderAbortIndicationPrimitive, PrimitiveError},
     table::TransitionTable,
 };
 
@@ -58,7 +58,7 @@ fn abort_reason_from_event(event: &Event) -> AbortReason {
 /// See [DICOM standard part 8](https://dicom.nema.org/medical/dicom/current/output/html/part08).
 pub struct UpperLayerConnection {
     pub state: UpperLayerConnectionState,
-    request: Option<AssociateRequestIndication>,
+    request: Option<AssociateRequestIndicationPrimitive>,
 
     pub called_address: Option<IpAddr>,
     called_port: Option<u16>,
@@ -102,7 +102,7 @@ pub fn handle_event(
     let mut out = Vec::new();
 
     match &event {
-        Event::ConnectionOpen { called_address, called_port, calling_address, calling_port } => {
+        Event::TransportConnectionConfirmation { called_address, called_port, calling_address, calling_port } => {
             conn.called_address = Some(*called_address);
             conn.called_port = Some(*called_port);
             conn.calling_address = Some(*calling_address);
@@ -114,7 +114,7 @@ pub fn handle_event(
             conn.calling_address = Some(*calling_address);
             conn.calling_port = Some(*calling_port);
         }
-        Event::AssociateRequest(indication) => {
+        Event::AssociateRequestPrimitive(indication) => {
             conn.request = Some(indication.clone());
         }
         _ => {}
@@ -131,16 +131,16 @@ pub fn handle_event(
                 AbortSource::ServiceUser,
                 abort_reason,
             )),
-            CommandKind::ProviderAbortIndication => {
-                Command::ProviderAbortIndication(ProviderAbortIndication::new(abort_reason))
+            CommandKind::ProviderAbortIndicationPrimitive => {
+                Command::ProviderAbortIndicationPrimitive(ProviderAbortIndicationPrimitive::new(abort_reason))
             }
 
-            CommandKind::AssociateIndication => {
+            CommandKind::AssociateIndicationPrimitive => {
                 let Event::AssociateRequestPdu(pdu) = event.take().unwrap() else {
                     panic!()
                 };
 
-                Command::AssociateIndication(AssociateRequestIndication::from_rq_pdu(
+                Command::AssociateIndicationPrimitive(AssociateRequestIndicationPrimitive::from_rq_pdu(
                     pdu,
                     format_presentation_address(conn.called_address.clone().unwrap(), conn.called_port.clone().unwrap()),
                     format_presentation_address(conn.calling_address.clone().unwrap(), conn.calling_port.clone().unwrap()),
@@ -156,27 +156,27 @@ pub fn handle_event(
             CommandKind::AssociateRequestPdu => {
                 Command::AssociateRequestPdu(AssociateRqAcPdu::try_from(conn.request.clone().unwrap())?)
             }
-            CommandKind::AbortIndication => {
+            CommandKind::AbortIndicationPrimitive => {
                 let Event::AssociateAbortPdu(pdu) = event.take().unwrap() else {
                     panic!()
                 };
 
-                Command::AbortIndication(AbortIndication::from_pdu(pdu))
+                Command::AbortIndicationPrimitive(AbortIndicationPrimitive::from_pdu(pdu))
             }
-            CommandKind::AssociateConfirmation => {
+            CommandKind::AssociateConfirmationPrimitive => {
                 match event.take().unwrap() {
                     Event::AssociateAcceptPdu(pdu) => {
-                        Command::AssociateConfirmation(AssociateConfirmation::from_ac_pdu(pdu)?)
+                        Command::AssociateConfirmationPrimitive(AssociateConfirmationPrimitive::from_ac_pdu(pdu)?)
                     }
                     Event::AssociateRejectPdu(rj) => {
-                        Command::AssociateConfirmation(AssociateConfirmation::from_rj_pdu(rj))
+                        Command::AssociateConfirmationPrimitive(AssociateConfirmationPrimitive::from_rj_pdu(rj))
                     }
                     _ => panic!("unexpected event for AssociateConfirmation"),
                 }
             }
 
             CommandKind::TransportConnectionRequest => {
-                let Event::AssociateRequest(request) = event.take().unwrap() else {
+                let Event::AssociateRequestPrimitive(request) = event.take().unwrap() else {
                     panic!()
                 };
 
