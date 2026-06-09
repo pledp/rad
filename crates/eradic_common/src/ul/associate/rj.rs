@@ -204,11 +204,11 @@ mod tests {
 
     #[test]
     fn test_deserialize_reject_pdu_invalid_result() {
-        let mut reader = Cursor::new(rj_bytes(0, 1, 1));
+        let mut reader = Cursor::new(rj_bytes(3, 1, 1));
         assert!(matches!(
             deserialize_reject_pdu(&mut reader),
             Err(PduDeserializationError::InvalidRejectPdu(RejectParseError::InvalidResult(
-                AssociationResultError::InvalidValue(0)
+                AssociationResultError::InvalidValue(3)
             )))
         ));
     }

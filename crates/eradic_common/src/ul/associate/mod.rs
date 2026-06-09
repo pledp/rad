@@ -20,6 +20,7 @@ use crate::{
         abort::deserialize_abort_pdu, rj::deserialize_reject_pdu,
         presentation_context::PresentationContextError,
         syntax::SyntaxItemError,
+        user_information::UserInfoItemError,
     },
 };
 
@@ -131,8 +132,6 @@ pub enum PduDeserializationError {
     UnrecognizedPduType(u8),
 
     // Unexpected errors
-    #[error("Item type unexpected: {0}")]
-    UnexpectedItemType(AssociateItemType),
     #[error("Unexpected PDU type: {0:?}")]
     UnexpectedPduType(PduType),
 
@@ -141,6 +140,8 @@ pub enum PduDeserializationError {
     InvalidSyntaxItem(#[from] SyntaxItemError),
     #[error(transparent)]
     InvalidPresentationItem(#[from] PresentationContextError),
+    #[error(transparent)]
+    InvalidUserInfoItem(#[from] UserInfoItemError),
     #[error(transparent)]
     InvalidAbortPdu(#[from] abort::AbortParseError),
     #[error(transparent)]

@@ -29,6 +29,8 @@ pub enum PresentationContextError {
         "Invalid item type, must be `AssociateItemType::PresentationContextRq` or `AssociateItemType::PresentationContextAc`: {0}"
     )]
     InvalidItemType(AssociateItemType),
+    #[error("unexpected item type in presentation context: {0}")]
+    UnexpectedItemType(AssociateItemType),
 }
 
 impl PresentationContextItem {
@@ -295,7 +297,9 @@ pub(crate) fn deserialize_presentation_context_item<T: Read>(
                 transfer_syntax_items.push(deserialize_syntax_item(&mut syntax_reader)?);
             }
             other => {
-                return Err(PduDeserializationError::UnexpectedItemType(other))
+                return Err(PduDeserializationError::InvalidPresentationItem(
+                    PresentationContextError::UnexpectedItemType(other),
+                ))
             }
         }
     }
@@ -552,8 +556,10 @@ mod tests {
 
         assert!(matches!(
             deserialize_presentation_context_item(&mut Cursor::new(data)),
-            Err(PduDeserializationError::UnexpectedItemType(
-                AssociateItemType::ApplicationContext
+            Err(PduDeserializationError::InvalidPresentationItem(
+                PresentationContextError::UnexpectedItemType(
+                    AssociateItemType::ApplicationContext
+                )
             ))
         ));
     }

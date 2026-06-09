@@ -1,9 +1,17 @@
 use std::io::{BufRead, BufReader, Read};
 
+use thiserror::Error;
+
 use crate::ul::associate::AssociateItemType;
 use crate::ul::associate::ITEM_LENGTH_LENGTH;
 use crate::ul::associate::PduDeserializationError;
 use crate::pdu::{PDU_TYPE_LENGTH, read_padding, vec8_add_padding};
+
+#[derive(Debug, Error)]
+pub enum UserInfoItemError {
+    #[error("unexpected item type in user information: {0}")]
+    UnexpectedItemType(AssociateItemType),
+}
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum UserInformation {
@@ -81,7 +89,9 @@ pub fn deserialize_user_info_item<T: Read>(reader: &mut T) -> Result<UserInforma
 
     let item_type: AssociateItemType = pdu_type[0].try_into()?;
     if item_type != AssociateItemType::UserInformation {
-        return Err(PduDeserializationError::UnexpectedItemType(item_type));
+        return Err(PduDeserializationError::InvalidUserInfoItem(
+            UserInfoItemError::UnexpectedItemType(item_type),
+        ));
     }
 
     read_padding(reader, 1);
@@ -195,7 +205,9 @@ pub fn deserialize_sub_item<T: Read>(reader: &mut T) -> Result<UserInformationSu
                 let uid = String::from_utf8(value)?;
                 UserInformation::ImplementationClassUid(ImplementationClassUid { uid })
             }
-            _ => return Err(PduDeserializationError::UnexpectedItemType(item_type)),
+            _ => return Err(PduDeserializationError::InvalidUserInfoItem(
+                UserInfoItemError::UnexpectedItemType(item_type),
+            )),
         },
     })
 }
@@ -366,7 +378,9 @@ mod tests {
 
                 assert!(matches!(
                     deserialize_sub_item(&mut data),
-                    Err(PduDeserializationError::UnexpectedItemType(t)) if t == expected_type
+                    Err(PduDeserializationError::InvalidUserInfoItem(
+                        UserInfoItemError::UnexpectedItemType(t)
+                    )) if t == expected_type
                 ));
             }
         }
@@ -529,7 +543,9 @@ mod tests {
 
                 assert!(matches!(
                     deserialize_user_info_item(&mut data),
-                    Err(PduDeserializationError::UnexpectedItemType(t)) if t == expected_type
+                    Err(PduDeserializationError::InvalidUserInfoItem(
+                        UserInfoItemError::UnexpectedItemType(t)
+                    )) if t == expected_type
                 ));
             }
         }
