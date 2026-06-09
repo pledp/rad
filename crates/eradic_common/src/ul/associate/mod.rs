@@ -32,11 +32,40 @@ const CONTEXT_ID_LENGTH: usize = 1;
 /// Length of the Result/Reason field.
 const RESULT_LENGTH: usize = 1;
 
+#[derive(Debug, Error)]
+pub enum AssociationResultError {
+    #[error("invalid association result value: {0}")]
+    InvalidValue(u8),
+}
+
 #[derive(Debug, PartialEq)]
 pub enum AssociationResult {
     Accepted,
     RejectedPermanent,
     RejectedTransient,
+}
+
+impl TryFrom<u8> for AssociationResult {
+    type Error = AssociationResultError;
+
+    fn try_from(value: u8) -> Result<Self, Self::Error> {
+        match value {
+            0x00 => Ok(AssociationResult::Accepted),
+            0x01 => Ok(AssociationResult::RejectedPermanent),
+            0x02 => Ok(AssociationResult::RejectedTransient),
+            v => Err(AssociationResultError::InvalidValue(v)),
+        }
+    }
+}
+
+impl From<AssociationResult> for u8 {
+    fn from(value: AssociationResult) -> Self {
+        match value {
+            AssociationResult::Accepted => 0x00,
+            AssociationResult::RejectedPermanent => 0x01,
+            AssociationResult::RejectedTransient => 0x02,
+        }
+    }
 }
 
 /// Peek into the next byte and output item type.

@@ -1,0 +1,1 @@
+- [`PduDeserializationError::InvalidRejectPdu`] - see [InvalidRejectPdu] for variants.

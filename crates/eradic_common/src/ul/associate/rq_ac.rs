@@ -165,6 +165,7 @@ pub fn serialize_associate_pdu(request: &AssociateRqAcPdu) -> Vec<u8> {
 #[doc = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/errors/deserialize_errors.md"))]
 #[doc = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/errors/syntax_deserialize_errors.md"))]
 #[doc = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/errors/presentation_item_deserialize_errors.md"))]
+#[doc = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/errors/user_info_deserialize_errors.md"))]
 pub fn deserialize_associate_pdu<T: Read>(
     reader: &mut T,
 ) -> std::result::Result<AssociateRqAcPdu, PduDeserializationError> {

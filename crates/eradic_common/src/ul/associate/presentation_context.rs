@@ -214,6 +214,7 @@ impl PresentationContextItemBuilder {
     }
 }
 
+/// Serializes a [PresentationContextItem] into a [Vec<u8>].
 pub(crate) fn serialize_presentation_context_item(item: &PresentationContextItem) -> Vec<u8> {
     let mut pdu: Vec<u8> = Vec::new();
 
@@ -619,5 +620,165 @@ mod tests {
             deserialize_presentation_context_item(&mut Cursor::new(serialized)).unwrap();
 
         assert_eq!(original, deserialized);
+    }
+
+    fn abs() -> SyntaxItem {
+        SyntaxItem::new(AssociateItemType::AbstractSyntax, "1.2.840.10008.1.1").unwrap()
+    }
+
+    fn ts() -> SyntaxItem {
+        SyntaxItem::new(AssociateItemType::TransferSyntax, "1.2.840.10008.1.2").unwrap()
+    }
+
+    fn ts2() -> SyntaxItem {
+        SyntaxItem::new(AssociateItemType::TransferSyntax, "1.2.840.10008.1.2.1").unwrap()
+    }
+
+    #[test]
+    fn test_builder_rq_produces_correct_item() {
+        let item = PresentationContextItemBuilder::new()
+            .item_type(AssociateItemType::PresentationContextRq)
+            .context_id(0x01)
+            .abstract_syntax_item(abs())
+            .add_transfer_syntax(ts())
+            .build()
+            .unwrap();
+
+        assert_eq!(item.item_type, AssociateItemType::PresentationContextRq);
+        assert_eq!(item.context_id, 0x01);
+        assert_eq!(item.result, None);
+        assert_eq!(item.abstract_syntax(), Some("1.2.840.10008.1.1"));
+        assert_eq!(item.transfer_syntax(), vec!["1.2.840.10008.1.2"]);
+    }
+
+    #[test]
+    fn test_builder_ac_produces_correct_item() {
+        let item = PresentationContextItemBuilder::new()
+            .item_type(AssociateItemType::PresentationContextAc)
+            .context_id(0x03)
+            .result(PresentationContextResult::Acceptance)
+            .add_transfer_syntax(ts())
+            .build()
+            .unwrap();
+
+        assert_eq!(item.item_type, AssociateItemType::PresentationContextAc);
+        assert_eq!(item.context_id, 0x03);
+        assert_eq!(item.result, Some(PresentationContextResult::Acceptance));
+        assert_eq!(item.abstract_syntax(), None);
+        assert_eq!(item.transfer_syntax(), vec!["1.2.840.10008.1.2"]);
+    }
+
+    #[test]
+    fn test_builder_add_transfer_syntax_accumulates() {
+        let item = PresentationContextItemBuilder::new()
+            .item_type(AssociateItemType::PresentationContextRq)
+            .context_id(0x01)
+            .abstract_syntax_item(abs())
+            .add_transfer_syntax(ts())
+            .add_transfer_syntax(ts2())
+            .build()
+            .unwrap();
+
+        assert_eq!(
+            item.transfer_syntax(),
+            vec!["1.2.840.10008.1.2", "1.2.840.10008.1.2.1"]
+        );
+    }
+
+    #[test]
+    fn test_builder_transfer_syntax_items_replaces_accumulated() {
+        let item = PresentationContextItemBuilder::new()
+            .item_type(AssociateItemType::PresentationContextRq)
+            .context_id(0x01)
+            .abstract_syntax_item(abs())
+            .add_transfer_syntax(ts())
+            .transfer_syntax_items(vec![ts2()])
+            .build()
+            .unwrap();
+
+        assert_eq!(item.transfer_syntax(), vec!["1.2.840.10008.1.2.1"]);
+    }
+
+    #[test]
+    fn test_builder_invalid_item_type_returns_error() {
+        let result = PresentationContextItemBuilder::new()
+            .item_type(AssociateItemType::UserInformation)
+            .context_id(0x01)
+            .add_transfer_syntax(ts())
+            .build();
+
+        assert!(matches!(
+            result,
+            Err(PresentationContextError::InvalidItemType(
+                AssociateItemType::UserInformation
+            ))
+        ));
+    }
+
+    #[test]
+    fn test_builder_rq_length_matches_direct_construction() {
+        let via_builder = PresentationContextItemBuilder::new()
+            .item_type(AssociateItemType::PresentationContextRq)
+            .context_id(0x01)
+            .abstract_syntax_item(abs())
+            .add_transfer_syntax(ts())
+            .add_transfer_syntax(ts2())
+            .build()
+            .unwrap();
+
+        let direct = PresentationContextItem::new(
+            AssociateItemType::PresentationContextRq,
+            0x01,
+            None,
+            Some(abs()),
+            vec![ts(), ts2()],
+        )
+        .unwrap();
+
+        assert_eq!(via_builder.length, direct.length);
+        assert_eq!(via_builder.item_length(), direct.item_length());
+    }
+
+    #[test]
+    fn test_builder_ac_all_result_variants() {
+        for result in [
+            PresentationContextResult::Acceptance,
+            PresentationContextResult::UserRejection,
+            PresentationContextResult::NoReason,
+            PresentationContextResult::AbstractSyntaxNotSupported,
+            PresentationContextResult::TransferSyntaxesNotSupported,
+        ] {
+            let item = PresentationContextItemBuilder::new()
+                .item_type(AssociateItemType::PresentationContextAc)
+                .context_id(0x01)
+                .result(result)
+                .add_transfer_syntax(ts())
+                .build()
+                .unwrap();
+
+            assert_eq!(item.result, Some(result));
+        }
+    }
+
+    #[test]
+    fn test_builder_rq_equals_direct_construction() {
+        let via_builder = PresentationContextItemBuilder::new()
+            .item_type(AssociateItemType::PresentationContextRq)
+            .context_id(0x05)
+            .abstract_syntax_item(abs())
+            .add_transfer_syntax(ts())
+            .build()
+            .unwrap();
+
+        let direct = PresentationContextItem::new(
+            AssociateItemType::PresentationContextRq,
+            0x05,
+            None,
+            Some(abs()),
+            vec![ts()],
+        )
+        .unwrap();
+
+        assert_eq!(via_builder, direct);
     }
 }
