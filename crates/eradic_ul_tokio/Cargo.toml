@@ -3,6 +3,16 @@ name = "eradic_ul_tokio"
 version = "0.1.0"
 edition = "2024"
 
+[features]
+default = ["state-watch", "state-mpsc"]
+# Exposes UpperLayerHandle::state_watch: a watch::Receiver<StateTransition> giving
+# synchronous access to the current state. Lossy: fast back-to-back transitions can be
+# coalesced, so intermediate states may never be observed.
+state-watch = []
+# Exposes UpperLayerHandle::state_mpsc: an mpsc::Receiver<StateTransition> queueing every
+# transition in order. Use this when the exact, complete transition history matters.
+state-mpsc = []
+
 [dependencies]
 eradic_common = { path = "../eradic_common", version = "0.1.0" }
 

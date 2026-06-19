@@ -5,13 +5,13 @@ use strum_macros::{EnumDiscriminants, IntoStaticStr, Display};
 use thiserror::Error;
 
 use crate::{
-    DeserializedPdu, ul::{associate::{AssociateRqAcPdu, abort::AssociateAbortPdu, rj::AssociateRjPdu}, service::{
-        AbortIndicationPrimitive, AssociateConfirmationPrimitive, AssociateRequestIndicationPrimitive, AssociateRequestResponsePrimitive, ProviderAbortIndicationPrimitive
+    DeserializedPdu, ul::{associate::{rq_ac::AssociateRqAcPdu, abort::AssociateAbortPdu, rj::AssociateRjPdu}, service::{
+        AbortIndicationPrimitive, AssociateConfirmationPrimitive, AssociateRequestIndicationPrimitive, AssociateResponsePrimitive, ProviderAbortIndicationPrimitive
     }}
 };
 
 /// DICOM standard events
-#[derive(Debug, PartialEq, IntoStaticStr, EnumDiscriminants)]
+#[derive(Debug, Clone, PartialEq, IntoStaticStr, EnumDiscriminants)]
 #[strum_discriminants(name(EventKind), derive(serde::Deserialize, Hash))]
 pub enum Event {
     TransportConnectionConfirmation {
@@ -34,7 +34,8 @@ pub enum Event {
     DataPdu,
     AssociateAbortPdu(AssociateAbortPdu),
     AssociateRequestPrimitive(AssociateRequestIndicationPrimitive),
-    AssociateResponsePrimitive(AssociateRequestResponsePrimitive),
+    AcceptedAssociateResponsePrimitive(AssociateResponsePrimitive),
+    RejectedAssociateResponsePrimitive(AssociateResponsePrimitive),
     TransportConnectionClosedIndication,
 
     // Abort events
@@ -56,6 +57,7 @@ pub enum Command {
     AbortIndicationPrimitive(AbortIndicationPrimitive),
     ProviderAbortIndicationPrimitive(ProviderAbortIndicationPrimitive),
     AssociateAcceptPdu(AssociateRqAcPdu),
+    AssociateRejectPdu(AssociateRjPdu),
     AssociateRequestPdu(AssociateRqAcPdu),
 
     AssociateConfirmationPrimitive(AssociateConfirmationPrimitive),
@@ -63,7 +65,6 @@ pub enum Command {
 
     // Association Abort Related Actions/Commands
     CloseConnection,
-
     /// Generic command to send AbortPdu
     AbortPdu(AssociateAbortPdu),
     /// Generic command to stop ARTIM timer
@@ -81,7 +82,7 @@ pub enum IndicationError {
 pub enum ServiceUserToServiceProvider {
     AbortRequest,
     AssociateRequestPrimitive(AssociateRequestIndicationPrimitive),
-    AssociateResponsePrimitive(AssociateRequestResponsePrimitive),
+    AssociateResponsePrimitive(AssociateResponsePrimitive),
 }
 
 pub type Request = ServiceUserToServiceProvider;

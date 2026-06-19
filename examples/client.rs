@@ -2,7 +2,7 @@ use tokio::net::TcpStream;
 use tracing::{info};
 use tracing_subscriber::fmt;
 
-use eradic::ul::associate::{MaximumLength, UserInformation};
+use eradic::ul::associate::user_information::{MaximumLength, UserInformation};
 use eradic::ul::service::{AssociateRequest, PresentationContextDefinitionListBuilder};
 use eradic_ul_tokio::requestor_handle_connection;
 

@@ -30,7 +30,7 @@ pub enum AssociateRqAcPduError {
     PresentationContextError(#[from] presentation_context::PresentationContextError),
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct AssociateRqAcPdu {
     pub pdu_type: PduType,
     pub length: u32,
@@ -236,7 +236,7 @@ pub fn deserialize_associate_pdu<T: Read>(
 }
 
 // TODO: item_type struct
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct ApplicationContextItem {
     pub item_type: AssociateItemType,
     pub length: u16,

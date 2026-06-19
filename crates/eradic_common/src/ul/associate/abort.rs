@@ -78,7 +78,7 @@ impl TryFrom<u8> for AbortReason {
     }
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct AssociateAbortPdu {
     pdu_type: PduType,
     length: u32,

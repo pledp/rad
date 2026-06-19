@@ -3,12 +3,18 @@ use std::io::Cursor;
 
 use eradic_common::DeserializedPdu;
 use eradic_common::ul::associate::abort::{AbortReason, serialize_abort_pdu};
-use eradic_common::ul::associate::{PduDeserializationError, deserialized_pdu_from_reader, serialize_associate_pdu};
+use eradic_common::ul::associate::rj::serialize_reject_pdu;
+use eradic_common::ul::associate::{AssociationResult, PduDeserializationError, deserialized_pdu_from_reader};
+use eradic_common::ul::associate::rq_ac::serialize_associate_pdu;
+use eradic_common::ul::associate::presentation_context::PresentationContextError;
+use eradic_common::ul::associate::user_information::UserInfoItemError;
 use eradic_common::ul::pdu::{PDU_HEADER_LENGTH, PduType, read_pdu_header};
 use eradic_common::ul::service::ProviderAbortIndicationPrimitive;
 use thiserror::Error;
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use tokio::sync::oneshot;
+#[cfg(feature = "state-watch")]
+use tokio::sync::watch;
 use tokio::{
     net::TcpStream,
     sync::mpsc,
@@ -17,12 +23,21 @@ use tokio::{
 
 use tracing::{info, instrument, warn};
 
-use eradic_common::ul::connection::{UpperLayerConnection, UpperLayerConnectionState, handle_event};
+use eradic_common::ul::connection::{StateTransition, UpperLayerConnection, UpperLayerConnectionState, handle_event};
 use eradic_common::ul::event::{Command, Confirmation, Event, Request, ServiceProviderToServiceUser, ServiceUserToServiceProvider, event_from_deserialized_pdu};
 
 use crate::artim::artim_task;
 
 use crate::{HandleClientError};
+
+/// Bundles the optional state-observation senders so they can be threaded through as a
+/// single, unconditional parameter regardless of which `state-*` features are enabled.
+pub struct StateSenders {
+    #[cfg(feature = "state-watch")]
+    pub watch: watch::Sender<StateTransition>,
+    #[cfg(feature = "state-mpsc")]
+    pub mpsc: mpsc::Sender<StateTransition>,
+}
 
 #[instrument(skip_all)]
 pub async fn handle_connection(
@@ -31,7 +46,8 @@ pub async fn handle_connection(
     connection: UpperLayerConnection,
     scp_to_scu_tx: mpsc::Sender<ServiceProviderToServiceUser>,
     scu_to_scp_rx: mpsc::Receiver<ServiceUserToServiceProvider>,
-    initial_events: Vec<Event>
+    initial_events: Vec<Event>,
+    state_senders: StateSenders,
 ) -> Result<(), HandleClientError> {
     let (reader, writer) = tcp.into_split();
 
@@ -45,7 +61,8 @@ pub async fn handle_connection(
     set.spawn(handle_event_task(
         event_rx,
         command_tx.clone(),
-        connection
+        connection,
+        state_senders,
     ));
 
     set.spawn(handle_command_task(writer, command_rx, event_tx.clone(), scp_to_scu_tx));
@@ -94,7 +111,14 @@ async fn scu_to_scp_task(
                         event_tx.send(Event::AssociateRequestPrimitive(request)).await;
                     }
                     ServiceUserToServiceProvider::AssociateResponsePrimitive(response) => {
-                        event_tx.send(Event::AssociateResponsePrimitive(response)).await;
+                        match response.result() {
+                            AssociationResult::Accepted => {
+                                event_tx.send(Event::AcceptedAssociateResponsePrimitive(response)).await;
+                            }
+                            AssociationResult::RejectedPermanent | AssociationResult::RejectedTransient => {
+                                event_tx.send(Event::RejectedAssociateResponsePrimitive(response)).await;
+                            }
+                        }
                     }
                 }
             }
@@ -141,12 +165,11 @@ where
                             PduDeserializationError::UnrecognizedItemType(item_type)
                         ));
                     }
-                    Err(PduDeserializationError::UnexpectedItemType(item_type)) => {
+                    Err(e @ PduDeserializationError::InvalidUserInfoItem(UserInfoItemError::UnexpectedItemType(_)))
+                    | Err(e @ PduDeserializationError::InvalidPresentationItem(PresentationContextError::UnexpectedItemType(_))) => {
                         let _ = event_tx.send(Event::UnexpectedPduParameter).await;
 
-                        return Err(HandleClientError::PduDeserializationError(
-                            PduDeserializationError::UnexpectedItemType(item_type)
-                        ));
+                        return Err(HandleClientError::PduDeserializationError(e));
                     }
                     Err(e) => {
                         let _ = event_tx.send(Event::InvalidPduParameter).await;
@@ -167,7 +190,11 @@ async fn handle_event_task(
     mut event_rx: mpsc::Receiver<Event>,
     command_tx: mpsc::Sender<(Command, UpperLayerConnectionState)>,
     mut conn: UpperLayerConnection,
+    state_senders: StateSenders,
 ) -> Result<(), HandleClientError> {
+    #[cfg(feature = "state-mpsc")]
+    let _ = state_senders.mpsc.send(StateTransition { event: None, state: conn.state }).await;
+
     loop {
         tokio::select! {
             event = event_rx.recv() => {
@@ -175,9 +202,26 @@ async fn handle_event_task(
                 info!("Received event: {}", <&str>::from(&event));
 
                 let state_before = conn.state;
+
+                #[cfg(any(feature = "state-watch", feature = "state-mpsc"))]
+                let event_for_state = event.clone();
+
                 match handle_event(conn, event) {
                     Ok((new_conn, commands)) => {
                         conn = new_conn;
+
+                        #[cfg(feature = "state-watch")]
+                        let _ = state_senders.watch.send(StateTransition {
+                            event: Some(event_for_state.clone()),
+                            state: conn.state,
+                        });
+
+                        #[cfg(feature = "state-mpsc")]
+                        let _ = state_senders.mpsc.send(StateTransition {
+                            event: Some(event_for_state.clone()),
+                            state: conn.state,
+                        }).await;
+
                         for cmd in commands {
                             let _ = command_tx.send((cmd, conn.state)).await;
                         }
@@ -261,6 +305,10 @@ where
                 stream_write_pdu(DeserializedPdu::AssociateAccept(pdu), &mut writer).await;
             }
 
+            Command::AssociateRejectPdu(pdu) => {
+                stream_write_pdu(DeserializedPdu::AssociateReject(pdu), &mut writer).await;
+            }
+
             Command::AssociateIndicationPrimitive(indication) => {
                 scp_to_scu_tx
                     .send(ServiceProviderToServiceUser::AssociateIndicationPrimitive(indication))
@@ -332,6 +380,10 @@ where
 
         DeserializedPdu::Abort(pdu) => {
             tcp.write_all(serialize_abort_pdu(&pdu).as_slice()).await;
+        }
+
+        DeserializedPdu::AssociateReject(pdu) => {
+            tcp.write_all(serialize_reject_pdu(&pdu).as_slice()).await;
         }
 
         _ => {

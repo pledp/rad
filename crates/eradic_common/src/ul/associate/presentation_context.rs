@@ -13,7 +13,7 @@ use crate::ul::associate::{
 /// Length of the presentation context item without the variable field.
 pub const PRESENTATION_CONTEXT_ITEM_NO_VARIABLE_FIELDS_LENGTH: u16 = 4;
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct PresentationContextItem {
     pub item_type: AssociateItemType,
     pub length: u16,
@@ -786,5 +786,19 @@ mod tests {
         .unwrap();
 
         assert_eq!(via_builder, direct);
+    }
+
+    #[test]
+    fn test_presentation_context_result_from_u8_encodes_all_variants_correctly() {
+        let cases = [
+            (PresentationContextResult::Acceptance, 0x00u8),
+            (PresentationContextResult::UserRejection, 0x01),
+            (PresentationContextResult::NoReason, 0x02),
+            (PresentationContextResult::AbstractSyntaxNotSupported, 0x03),
+            (PresentationContextResult::TransferSyntaxesNotSupported, 0x04),
+        ];
+        for (variant, expected_byte) in cases {
+            assert_eq!(u8::from(variant), expected_byte);
+        }
     }
 }

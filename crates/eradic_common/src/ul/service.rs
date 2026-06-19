@@ -6,15 +6,14 @@ use crate::ul::associate::abort::{AbortReason, AbortSource, AssociateAbortPdu};
 use crate::ul::associate::presentation_context::{
     PresentationContextItemBuilder, PresentationContextResult,
 };
-use crate::ul::associate::rj::{AssociateRjPdu, RejectReason, ServiceUserReason};
+use crate::ul::associate::rj::{AssociateRjPdu, RejectReason, RejectSource, ServiceUserReason};
 use crate::ul::associate::syntax::{SyntaxItem};
 use crate::ul::associate::{
-    ApplicationContextItem, AssociateItemType, AssociateRqAcPduError, PduDeserializationError,
-    AssociationResult, UserInformationItem, UserInformationSubItem,
+    AssociateItemType, PduDeserializationError, AssociationResult,
 };
-use crate::ul::associate::{
-    AssociateRqAcPdu, UserInformation, presentation_context::PresentationContextItem,
-};
+use crate::ul::associate::rq_ac::{ApplicationContextItem, AssociateRqAcPdu, AssociateRqAcPduError};
+use crate::ul::associate::user_information::{UserInformation, UserInformationItem, UserInformationSubItem};
+use crate::ul::associate::presentation_context::PresentationContextItem;
 use crate::ul::connection::format_presentation_address;
 
 #[derive(Error, Debug)]
@@ -102,10 +101,60 @@ impl AssociateRequestIndicationPrimitive {
     }
 }
 
-impl TryFrom<AssociateRequestResponsePrimitive> for AssociateRqAcPdu {
+impl TryFrom<AssociateRequestIndicationPrimitive> for AssociateRqAcPdu {
     type Error = AssociateRqAcPduError;
 
-    fn try_from(response: AssociateRequestResponsePrimitive) -> Result<Self, Self::Error> {
+    fn try_from(indication: AssociateRequestIndicationPrimitive) -> Result<Self, Self::Error> {
+        let mut presentation_context_items = Vec::new();
+
+        for context in indication.presentation_context() {
+            let mut builder = PresentationContextItemBuilder::new()
+                .item_type(AssociateItemType::PresentationContextRq)
+                .context_id(context.context_id)
+                .abstract_syntax_item(SyntaxItem::new(
+                    AssociateItemType::AbstractSyntax,
+                    &context.abstract_syntax,
+                )?);
+
+            for transfer in &context.transfer_syntax {
+                builder = builder.add_transfer_syntax(SyntaxItem::new(
+                    AssociateItemType::TransferSyntax,
+                    &transfer,
+                )?);
+            }
+
+            presentation_context_items.push(builder.build()?);
+        }
+
+        let user_info_item = UserInformationItem::new(
+            indication.user_information().iter().map(|ui| UserInformationSubItem::new(ui.clone())).collect()
+        );
+
+        Ok(Self::new_rq(
+            &indication.called_ae,
+            &indication.calling_ae,
+            ApplicationContextItem::new(&indication.context_name),
+            presentation_context_items,
+            user_info_item,
+        ))
+    }
+}
+
+pub fn associate_response_into_reject_pdu(
+    response: AssociateResponsePrimitive,
+    source: RejectSource
+) -> AssociateRjPdu {
+    AssociateRjPdu {
+        result: response.result,
+        source,
+        reason: RejectReason::ServiceUser(response.diagnostic),
+    }
+}
+
+impl TryFrom<AssociateResponsePrimitive> for AssociateRqAcPdu {
+    type Error = AssociateRqAcPduError;
+
+    fn try_from(response: AssociateResponsePrimitive) -> Result<Self, Self::Error> {
         let mut presentation_context_items = Vec::new();
 
         for context in response.presentation_context_result() {
@@ -273,20 +322,24 @@ impl PresentationContextDefinitionListBuilder {
     }
 }
 
-#[derive(Debug, PartialEq)]
-pub struct AssociateRequestResponsePrimitive {
+#[derive(Debug, Clone, PartialEq)]
+pub struct AssociateResponsePrimitive {
     pub context_name: String,
     pub called_ae: String,
     pub calling_ae: String,
     pub user_information: Vec<UserInformation>,
     pub presentation_context_result: Vec<PresentationContextDefinitionResult>,
-    pub diagnostic: Option<ServiceUserReason>,
-    pub result: Option<AssociationResult>,
+    pub diagnostic: ServiceUserReason,
+    pub result: AssociationResult,
 }
 
-impl AssociateRequestResponsePrimitive {
+impl AssociateResponsePrimitive {
     pub fn presentation_context_result(&self) -> &Vec<PresentationContextDefinitionResult> {
         &self.presentation_context_result
+    }
+
+    pub fn result(&self) -> AssociationResult {
+        self.result
     }
 
     pub fn user_information(&self) -> &Vec<UserInformation> {
@@ -308,7 +361,7 @@ pub struct AssociateConfirmationPrimitive {
 impl AssociateConfirmationPrimitive {
     pub fn from_rj_pdu(pdu: AssociateRjPdu) -> Self {
         let diagnostic = match pdu.reason {
-            Some(RejectReason::ServiceUser(r)) => Some(r),
+            RejectReason::ServiceUser(r) => Some(r),
             _ => None,
         };
         Self {
@@ -373,45 +426,6 @@ impl AbortIndicationPrimitive {
 
     pub fn from_pdu(pdu: AssociateAbortPdu) -> Self {
         Self { source: pdu.source }
-    }
-}
-
-impl TryFrom<AssociateRequestIndicationPrimitive> for AssociateRqAcPdu {
-    type Error = AssociateRqAcPduError;
-
-    fn try_from(indication: AssociateRequestIndicationPrimitive) -> Result<Self, Self::Error> {
-        let mut presentation_context_items = Vec::new();
-
-        for context in indication.presentation_context() {
-            let mut builder = PresentationContextItemBuilder::new()
-                .item_type(AssociateItemType::PresentationContextRq)
-                .context_id(context.context_id)
-                .abstract_syntax_item(SyntaxItem::new(
-                    AssociateItemType::AbstractSyntax,
-                    &context.abstract_syntax,
-                )?);
-
-            for transfer in &context.transfer_syntax {
-                builder = builder.add_transfer_syntax(SyntaxItem::new(
-                    AssociateItemType::TransferSyntax,
-                    &transfer,
-                )?);
-            }
-
-            presentation_context_items.push(builder.build()?);
-        }
-
-        let user_info_item = UserInformationItem::new(
-            indication.user_information().iter().map(|ui| UserInformationSubItem::new(ui.clone())).collect()
-        );
-
-        Ok(Self::new_rq(
-            &indication.called_ae,
-            &indication.calling_ae,
-            ApplicationContextItem::new(&indication.context_name),
-            presentation_context_items,
-            user_info_item,
-        ))
     }
 }
 

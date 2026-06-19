@@ -4,7 +4,8 @@ use std::io::Read;
 use strum_macros::IntoStaticStr;
 use thiserror::Error;
 
-use crate::ul::associate::{AssociateRqAcPdu, PduDeserializationError};
+use crate::ul::associate::PduDeserializationError;
+use crate::ul::associate::rq_ac::AssociateRqAcPdu;
 use crate::ul::associate::abort::AssociateAbortPdu;
 use crate::ul::associate::rj::AssociateRjPdu;
 

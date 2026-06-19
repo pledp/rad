@@ -1,26 +1,20 @@
 pub mod abort;
 pub mod presentation_context;
 pub mod rj;
-mod rq_ac;
+pub mod rq_ac;
 pub mod syntax;
-mod user_information;
+pub mod user_information;
 
 use std::io::Read;
 
 use strum_macros::Display;
 use thiserror::Error;
 
-pub use rq_ac::*;
-pub use user_information::*;
-
 use crate::{
     DeserializedPdu,
     pdu::PduType,
     ul::associate::{
-        abort::deserialize_abort_pdu, rj::deserialize_reject_pdu,
-        presentation_context::PresentationContextError,
-        syntax::SyntaxItemError,
-        user_information::UserInfoItemError,
+        abort::deserialize_abort_pdu, presentation_context::PresentationContextError, rj::deserialize_reject_pdu, rq_ac::deserialize_associate_pdu, syntax::SyntaxItemError, user_information::UserInfoItemError
     },
 };
 
@@ -39,7 +33,7 @@ pub enum AssociationResultError {
     InvalidValue(u8),
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone, Copy)]
 pub enum AssociationResult {
     Accepted,
     RejectedPermanent,

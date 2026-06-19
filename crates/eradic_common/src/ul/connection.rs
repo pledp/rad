@@ -4,13 +4,14 @@ use thiserror::Error;
 
 use crate::ul::{
     associate::{
-        AssociateRqAcPdu, AssociateRqAcPduError,
-        abort::{AbortReason, AbortSource, AssociateAbortPdu},
+        abort::{AbortReason, AbortSource, AssociateAbortPdu}, rq_ac::{AssociateRqAcPdu, AssociateRqAcPduError}
     },
-    event::{Command, CommandKind, Event, EventKind},
-    service::{AbortIndicationPrimitive, AssociateConfirmationPrimitive, AssociateRequestIndicationPrimitive, ProviderAbortIndicationPrimitive, PrimitiveError},
+    event::{Command, CommandKind::{self, AssociateRejectPdu}, Event, EventKind},
+    service::{AbortIndicationPrimitive, AssociateConfirmationPrimitive, AssociateRequestIndicationPrimitive, PrimitiveError, ProviderAbortIndicationPrimitive, associate_response_into_reject_pdu},
     table::TransitionTable,
 };
+
+use super::associate::rj::RejectSource::ServiceUser;
 
 #[derive(Debug, Error)]
 pub enum UpperLayerStateMachineError {
@@ -40,6 +41,14 @@ pub enum UpperLayerConnectionState {
     DataTransfer,
     #[serde(rename = "Sta13")]
     WaitForTcpClose,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct StateTransition {
+    /// The event that caused this transition. `None` for the initial state, which isn't the
+    /// result of any event.
+    pub event: Option<Event>,
+    pub state: UpperLayerConnectionState,
 }
 
 fn abort_reason_from_event(event: &Event) -> AbortReason {
@@ -147,11 +156,21 @@ pub fn handle_event(
                 ))
             }
             CommandKind::AssociateAcceptPdu => {
-                let Event::AssociateResponsePrimitive(prim) = event.take().unwrap() else {
+                let Event::AcceptedAssociateResponsePrimitive(prim) = event.take().unwrap() else {
                     panic!()
                 };
 
                 Command::AssociateAcceptPdu(AssociateRqAcPdu::try_from(prim)?)
+            }
+            CommandKind::AssociateRejectPdu => {
+                let Event::RejectedAssociateResponsePrimitive(prim) = event.take().unwrap() else {
+                    panic!()
+                };
+
+                Command::AssociateRejectPdu(associate_response_into_reject_pdu(
+                    prim,
+                    ServiceUser
+                ))
             }
             CommandKind::AssociateRequestPdu => {
                 Command::AssociateRequestPdu(AssociateRqAcPdu::try_from(conn.request.clone().unwrap())?)

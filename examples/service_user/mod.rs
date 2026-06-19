@@ -4,11 +4,13 @@ use std::sync::{Arc, Mutex};
 use eradic::ul::service::PresentationContextDefinitionResult;
 use eradic::{
     ul::associate::{
+        AssociationResult,
         presentation_context::PresentationContextResult,
+        rj::ServiceUserReason,
     },
     ul::event::Event,
     ul::service::{
-        AssociateRequestResponsePrimitive, AssociateRequestIndicationPrimitive,
+        AssociateResponsePrimitive, AssociateRequestIndicationPrimitive,
     },
 };
 
@@ -17,7 +19,7 @@ pub type ApplicationEntityRegistry = HashMap<String, Arc<Mutex<Pacs>>>;
 struct Pacs {}
 
 impl Pacs {
-    pub fn handle_associate_request(&mut self, indication: AssociateRequestIndicationPrimitive) -> AssociateRequestResponsePrimitive {
+    pub fn handle_associate_request(&mut self, indication: AssociateRequestIndicationPrimitive) -> AssociateResponsePrimitive {
         let presentation_context_result = indication
             .presentation_context()
             .iter()
@@ -28,14 +30,14 @@ impl Pacs {
             })
             .collect();
 
-        AssociateRequestResponsePrimitive {
+        AssociateResponsePrimitive {
             context_name: indication.context_name,
             called_ae: indication.called_ae,
             calling_ae: indication.calling_ae,
             user_information: indication.user_information,
             presentation_context_result,
-            diagnostic: None,
-            result: None,
+            diagnostic: ServiceUserReason::NoReason,
+            result: AssociationResult::Accepted,
         }
     }
 }
@@ -51,7 +53,7 @@ impl LocalUpperLayerServiceUser {
         Self { application_entities: registry }
     }
 
-    pub async fn handle_associate_request(&self, indication: AssociateRequestIndicationPrimitive) -> AssociateRequestResponsePrimitive {
+    pub async fn handle_associate_request(&self, indication: AssociateRequestIndicationPrimitive) -> AssociateResponsePrimitive {
         match self.application_entities.get(&indication.called_ae) {
             Some(pacs) => {
                 let prim = {

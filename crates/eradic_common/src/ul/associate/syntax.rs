@@ -63,7 +63,7 @@ pub enum SyntaxItemError {
 /// [SyntaxItem] may represent an abstract syntax or a transfer syntax.
 ///
 /// See [DICOM standard part 8](https://dicom.nema.org/medical/dicom/current/output/html/part08.html#chapter_8).
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct SyntaxItem {
     pub item_type: AssociateItemType,
     pub length: u16,

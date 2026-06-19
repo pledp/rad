@@ -29,7 +29,7 @@ pub struct ImplementationClassUid {
     pub uid: String,
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct UserInformationItem {
     pub item_type: AssociateItemType,
     pub length: u16,
@@ -111,7 +111,7 @@ pub fn deserialize_user_info_item<T: Read>(reader: &mut T) -> Result<UserInforma
     Ok(UserInformationItem::new(sub_items))
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct UserInformationSubItem {
     pub item_type: u8,
     pub length: u16,

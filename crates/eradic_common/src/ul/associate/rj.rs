@@ -2,7 +2,7 @@ use std::io::Read;
 
 use thiserror::Error;
 
-use crate::pdu::{PDU_LENGTH_LENGTH, PDU_TYPE_LENGTH, PduType, read_padding};
+use crate::pdu::{PDU_LENGTH_LENGTH, PDU_TYPE_LENGTH, PduType, read_padding, vec8_add_padding};
 use crate::ul::associate::{AssociationResult, AssociationResultError, PduDeserializationError};
 
 #[derive(Debug, Error)]
@@ -45,14 +45,14 @@ impl From<RejectSource> for u8 {
     }
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum RejectReason {
     ServiceUser(ServiceUserReason),
     Acse(AcseReason),
     Presentation(PresentationReason),
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum ServiceUserReason {
     NoReason,
     ApplicationContextNameNotSupported,
@@ -60,23 +60,56 @@ pub enum ServiceUserReason {
     CalledAeNotRecognized,
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum AcseReason {
     NoReason,
     ProtocolNotSupported,
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum PresentationReason {
     TemporaryCongestion,
     LocalLimitExceeded,
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct AssociateRjPdu {
     pub result: AssociationResult,
     pub source: RejectSource,
-    pub reason: Option<RejectReason>,
+    pub reason: RejectReason,
+}
+
+/// Serializes an [AssociateRjPdu] into a [`Vec<u8>`].
+///
+/// See [DICOM standard part 8, §9.3.4](https://dicom.nema.org/medical/dicom/current/output/html/part08.html#sect_9.3.4)
+pub fn serialize_reject_pdu(item: &AssociateRjPdu) -> Vec<u8> {
+    let mut pdu: Vec<u8> = Vec::new();
+
+    pdu.push(PduType::AssociateReject.into());
+    vec8_add_padding(&mut pdu, 1);
+    pdu.extend_from_slice(&4u32.to_be_bytes());
+
+    vec8_add_padding(&mut pdu, 1);
+    pdu.push(item.result.into());
+    pdu.push(item.source.into());
+    pdu.push(reject_reason_to_byte(item.reason));
+
+    pdu
+}
+
+/// Maps a [RejectReason] to its single-byte wire encoding. The valid byte values are
+/// source-specific, per the reason tables in DICOM PS3.8 §9.3.4.
+fn reject_reason_to_byte(reason: RejectReason) -> u8 {
+    match reason {
+        RejectReason::ServiceUser(ServiceUserReason::NoReason) => 1,
+        RejectReason::ServiceUser(ServiceUserReason::ApplicationContextNameNotSupported) => 2,
+        RejectReason::ServiceUser(ServiceUserReason::CallingAeNotRecognized) => 3,
+        RejectReason::ServiceUser(ServiceUserReason::CalledAeNotRecognized) => 7,
+        RejectReason::Acse(AcseReason::NoReason) => 1,
+        RejectReason::Acse(AcseReason::ProtocolNotSupported) => 2,
+        RejectReason::Presentation(PresentationReason::TemporaryCongestion) => 1,
+        RejectReason::Presentation(PresentationReason::LocalLimitExceeded) => 2,
+    }
 }
 
 /// Deserializes bytes from a [Read] into an [AssociateRjPdu].
@@ -117,14 +150,14 @@ pub fn deserialize_reject_pdu<R: Read>(
     let mut reason_buf = [0u8; 1];
     reader.read_exact(&mut reason_buf)?;
     let reason = match (&source, reason_buf[0]) {
-        (RejectSource::ServiceUser, 1) => Some(RejectReason::ServiceUser(ServiceUserReason::NoReason)),
-        (RejectSource::ServiceUser, 2) => Some(RejectReason::ServiceUser(ServiceUserReason::ApplicationContextNameNotSupported)),
-        (RejectSource::ServiceUser, 3) => Some(RejectReason::ServiceUser(ServiceUserReason::CallingAeNotRecognized)),
-        (RejectSource::ServiceUser, 7) => Some(RejectReason::ServiceUser(ServiceUserReason::CalledAeNotRecognized)),
-        (RejectSource::Acse, 1) => Some(RejectReason::Acse(AcseReason::NoReason)),
-        (RejectSource::Acse, 2) => Some(RejectReason::Acse(AcseReason::ProtocolNotSupported)),
-        (RejectSource::Presentation, 1) => Some(RejectReason::Presentation(PresentationReason::TemporaryCongestion)),
-        (RejectSource::Presentation, 2) => Some(RejectReason::Presentation(PresentationReason::LocalLimitExceeded)),
+        (RejectSource::ServiceUser, 1) => RejectReason::ServiceUser(ServiceUserReason::NoReason),
+        (RejectSource::ServiceUser, 2) => RejectReason::ServiceUser(ServiceUserReason::ApplicationContextNameNotSupported),
+        (RejectSource::ServiceUser, 3) => RejectReason::ServiceUser(ServiceUserReason::CallingAeNotRecognized),
+        (RejectSource::ServiceUser, 7) => RejectReason::ServiceUser(ServiceUserReason::CalledAeNotRecognized),
+        (RejectSource::Acse, 1) => RejectReason::Acse(AcseReason::NoReason),
+        (RejectSource::Acse, 2) => RejectReason::Acse(AcseReason::ProtocolNotSupported),
+        (RejectSource::Presentation, 1) => RejectReason::Presentation(PresentationReason::TemporaryCongestion),
+        (RejectSource::Presentation, 2) => RejectReason::Presentation(PresentationReason::LocalLimitExceeded),
         (source, v) => return Err(PduDeserializationError::InvalidRejectPdu(
             RejectParseError::InvalidReason { src: *source, reason: v },
         )),
@@ -148,7 +181,7 @@ mod tests {
         let pdu = deserialize_reject_pdu(&mut reader).unwrap();
         assert_eq!(pdu.result, AssociationResult::RejectedPermanent);
         assert_eq!(pdu.source, RejectSource::ServiceUser);
-        assert_eq!(pdu.reason, Some(RejectReason::ServiceUser(ServiceUserReason::NoReason)));
+        assert_eq!(pdu.reason, RejectReason::ServiceUser(ServiceUserReason::NoReason));
     }
 
     #[test]
@@ -170,7 +203,7 @@ mod tests {
             let mut reader = Cursor::new(rj_bytes(1, 1, reason_byte));
             let pdu = deserialize_reject_pdu(&mut reader).unwrap();
             assert_eq!(pdu.source, RejectSource::ServiceUser);
-            assert_eq!(pdu.reason, Some(expected));
+            assert_eq!(pdu.reason, expected);
         }
     }
 
@@ -184,7 +217,7 @@ mod tests {
             let mut reader = Cursor::new(rj_bytes(1, 2, reason_byte));
             let pdu = deserialize_reject_pdu(&mut reader).unwrap();
             assert_eq!(pdu.source, RejectSource::Acse);
-            assert_eq!(pdu.reason, Some(expected));
+            assert_eq!(pdu.reason, expected);
         }
     }
 
@@ -198,7 +231,7 @@ mod tests {
             let mut reader = Cursor::new(rj_bytes(1, 3, reason_byte));
             let pdu = deserialize_reject_pdu(&mut reader).unwrap();
             assert_eq!(pdu.source, RejectSource::Presentation);
-            assert_eq!(pdu.reason, Some(expected));
+            assert_eq!(pdu.reason, expected);
         }
     }
 
@@ -245,6 +278,18 @@ mod tests {
     }
 
     #[test]
+    fn test_reject_source_from_u8_encodes_all_variants_correctly() {
+        let cases = [
+            (RejectSource::ServiceUser, 0x01u8),
+            (RejectSource::Acse, 0x02),
+            (RejectSource::Presentation, 0x03),
+        ];
+        for (variant, expected_byte) in cases {
+            assert_eq!(u8::from(variant), expected_byte);
+        }
+    }
+
+    #[test]
     fn test_deserialize_reject_pdu_invalid_length() {
         // Empty
         assert!(matches!(
@@ -256,5 +301,140 @@ mod tests {
             deserialize_reject_pdu(&mut Cursor::new(vec![0x03, 0x00, 0x00, 0x00, 0x00, 0x04, 0x00, 0x01, 0x01])),
             Err(PduDeserializationError::InvalidLength(_))
         ));
+    }
+
+    // --- serialize_reject_pdu tests ---
+
+    #[test]
+    fn test_serialize_reject_pdu_produces_correct_bytes() {
+        let pdu = AssociateRjPdu {
+            result: AssociationResult::RejectedPermanent,
+            source: RejectSource::ServiceUser,
+            reason: RejectReason::ServiceUser(ServiceUserReason::NoReason),
+        };
+
+        // DICOM PS3.8 §9.3.4: 03H, reserved, length=4 (4 bytes BE), reserved, result, source, reason
+        assert_eq!(
+            serialize_reject_pdu(&pdu),
+            vec![0x03, 0x00, 0x00, 0x00, 0x00, 0x04, 0x00, 0x01, 0x01, 0x01]
+        );
+    }
+
+    #[test]
+    fn test_serialize_reject_pdu_output_is_always_10_bytes() {
+        let pdu = AssociateRjPdu {
+            result: AssociationResult::RejectedTransient,
+            source: RejectSource::Presentation,
+            reason: RejectReason::Presentation(PresentationReason::LocalLimitExceeded),
+        };
+        assert_eq!(serialize_reject_pdu(&pdu).len(), 10);
+    }
+
+    #[test]
+    fn test_serialize_reject_pdu_first_byte_is_reject_pdu_type() {
+        let pdu = AssociateRjPdu {
+            result: AssociationResult::RejectedPermanent,
+            source: RejectSource::Acse,
+            reason: RejectReason::Acse(AcseReason::NoReason),
+        };
+        assert_eq!(serialize_reject_pdu(&pdu)[0], 0x03);
+    }
+
+    #[test]
+    fn test_serialize_reject_pdu_reserved_padding_bytes_are_zero() {
+        let pdu = AssociateRjPdu {
+            result: AssociationResult::RejectedPermanent,
+            source: RejectSource::ServiceUser,
+            reason: RejectReason::ServiceUser(ServiceUserReason::NoReason),
+        };
+        let bytes = serialize_reject_pdu(&pdu);
+        assert_eq!(bytes[1], 0x00, "byte 1 must be reserved 0x00");
+        assert_eq!(bytes[6], 0x00, "byte 6 must be reserved 0x00");
+    }
+
+    #[test]
+    fn test_serialize_reject_pdu_length_field_is_4_big_endian() {
+        let pdu = AssociateRjPdu {
+            result: AssociationResult::RejectedPermanent,
+            source: RejectSource::ServiceUser,
+            reason: RejectReason::ServiceUser(ServiceUserReason::NoReason),
+        };
+        let bytes = serialize_reject_pdu(&pdu);
+        let length = u32::from_be_bytes([bytes[2], bytes[3], bytes[4], bytes[5]]);
+        assert_eq!(length, 4);
+    }
+
+    #[test]
+    fn test_serialize_reject_pdu_encodes_all_sources_correctly() {
+        let cases: &[(RejectSource, u8)] = &[
+            (RejectSource::ServiceUser, 0x01),
+            (RejectSource::Acse, 0x02),
+            (RejectSource::Presentation, 0x03),
+        ];
+        for &(source, expected) in cases {
+            let pdu = AssociateRjPdu {
+                result: AssociationResult::RejectedPermanent,
+                source,
+                reason: RejectReason::ServiceUser(ServiceUserReason::NoReason),
+            };
+            assert_eq!(serialize_reject_pdu(&pdu)[8], expected, "source {:?} should encode as {:#04x}", source, expected);
+        }
+    }
+
+    #[test]
+    fn test_serialize_reject_pdu_encodes_all_results_correctly() {
+        let cases: &[(AssociationResult, u8)] = &[
+            (AssociationResult::Accepted, 0x00),
+            (AssociationResult::RejectedPermanent, 0x01),
+            (AssociationResult::RejectedTransient, 0x02),
+        ];
+        for &(result, expected) in cases {
+            let pdu = AssociateRjPdu {
+                result,
+                source: RejectSource::ServiceUser,
+                reason: RejectReason::ServiceUser(ServiceUserReason::NoReason),
+            };
+            assert_eq!(serialize_reject_pdu(&pdu)[7], expected, "result {:?} should encode as {:#04x}", result, expected);
+        }
+    }
+
+    #[test]
+    fn test_serialize_reject_pdu_encodes_all_reasons_correctly() {
+        let cases: &[(RejectSource, RejectReason, u8)] = &[
+            (RejectSource::ServiceUser, RejectReason::ServiceUser(ServiceUserReason::NoReason), 1),
+            (RejectSource::ServiceUser, RejectReason::ServiceUser(ServiceUserReason::ApplicationContextNameNotSupported), 2),
+            (RejectSource::ServiceUser, RejectReason::ServiceUser(ServiceUserReason::CallingAeNotRecognized), 3),
+            (RejectSource::ServiceUser, RejectReason::ServiceUser(ServiceUserReason::CalledAeNotRecognized), 7),
+            (RejectSource::Acse, RejectReason::Acse(AcseReason::NoReason), 1),
+            (RejectSource::Acse, RejectReason::Acse(AcseReason::ProtocolNotSupported), 2),
+            (RejectSource::Presentation, RejectReason::Presentation(PresentationReason::TemporaryCongestion), 1),
+            (RejectSource::Presentation, RejectReason::Presentation(PresentationReason::LocalLimitExceeded), 2),
+        ];
+        for &(source, reason, expected) in cases {
+            let pdu = AssociateRjPdu {
+                result: AssociationResult::RejectedPermanent,
+                source,
+                reason,
+            };
+            assert_eq!(serialize_reject_pdu(&pdu)[9], expected, "reason {:?} should encode as {:#04x}", reason, expected);
+        }
+    }
+
+    #[test]
+    fn test_serialize_reject_pdu_roundtrip() {
+        let cases: &[(AssociationResult, RejectSource, RejectReason)] = &[
+            (AssociationResult::RejectedPermanent, RejectSource::ServiceUser, RejectReason::ServiceUser(ServiceUserReason::NoReason)),
+            (AssociationResult::RejectedTransient, RejectSource::Acse, RejectReason::Acse(AcseReason::ProtocolNotSupported)),
+            (AssociationResult::RejectedPermanent, RejectSource::Presentation, RejectReason::Presentation(PresentationReason::LocalLimitExceeded)),
+        ];
+        for &(result, source, reason) in cases {
+            let pdu = AssociateRjPdu { result, source, reason };
+            let bytes = serialize_reject_pdu(&pdu);
+            let mut reader = Cursor::new(bytes);
+            let recovered = deserialize_reject_pdu(&mut reader).expect("roundtrip deserialization must succeed");
+            assert_eq!(recovered.result, result);
+            assert_eq!(recovered.source, source);
+            assert_eq!(recovered.reason, reason);
+        }
     }
 }

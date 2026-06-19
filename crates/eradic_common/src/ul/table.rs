@@ -23,7 +23,6 @@ impl TransitionTable {
     }
 
     /// Looks up the transition for a given state and event.
-    /// Falls back to the `"*"` wildcard state if no specific entry exists.
     pub fn lookup(&self, state: UpperLayerConnectionState, event: EventKind) -> Option<&TransitionEntry> {
         self.transitions.get(&state).and_then(|m| m.get(&event))
     }
