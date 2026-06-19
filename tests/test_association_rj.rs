@@ -17,7 +17,7 @@ use common::util::*;
 async fn test_association_requestor_sta1_to_sta6_ok() {
     fmt().with_max_level(tracing::Level::DEBUG).init();
 
-    let server = TcpListener::bind("127.0.0.1:104").await.unwrap();
+    let server = TcpListener::bind("127.0.0.1:11105").await.unwrap();
     create_server_one_connection(server, |indication, tx| async move {
         if let ServiceProviderToServiceUser::AssociateIndicationPrimitive(ind) = indication {
             let response = accept_all_response(ind);
@@ -29,7 +29,7 @@ async fn test_association_requestor_sta1_to_sta6_ok() {
     })
     .await;
 
-    let stream = TcpStream::connect("127.0.0.1:104").await.unwrap();
+    let stream = TcpStream::connect("127.0.0.1:11105").await.unwrap();
 
     let request = default_associate_request(&stream);
     let accepted_response = accept_all_response(request.clone());
