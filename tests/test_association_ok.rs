@@ -15,8 +15,6 @@ use common::util::*;
 
 #[tokio::test]
 async fn test_association_requestor_sta1_to_sta6_ok() {
-    fmt().with_max_level(tracing::Level::DEBUG).init();
-
     let server = TcpListener::bind("127.0.0.1:11104").await.unwrap();
     create_server_one_connection(server, |indication, tx| async move {
         if let ServiceProviderToServiceUser::AssociateIndicationPrimitive(ind) = indication {
@@ -71,13 +69,6 @@ async fn test_association_requestor_sta1_to_sta6_ok() {
         }
         states
     });
-
-    let mut indications = vec![];
-
-    while let Some(ind) = handle.scp_to_scu_rx.recv().await {
-        indications.push(ind);
-        handle.task.abort();
-    }
 
     let observed_transistions = state_task.await.unwrap();
 

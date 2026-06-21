@@ -320,9 +320,15 @@ where
                 stream_write_pdu(DeserializedPdu::AssociateRequest(pdu), &mut writer).await;
             }
 
-            Command::AssociateConfirmationPrimitive(prim) => {
+            Command::AcceptedAssociateConfirmationPrimitive(prim) => {
                 scp_to_scu_tx
-                    .send(Confirmation::AssociateConfirmationPrimitive(prim))
+                    .send(Confirmation::AcceptedAssociateConfirmationPrimitive(prim))
+                    .await;
+            }
+
+            Command::RejectedAssociateConfirmationPrimitive(prim) => {
+                scp_to_scu_tx
+                    .send(Confirmation::RejectedAssociateConfirmationPrimitive(prim))
                     .await;
             }
 

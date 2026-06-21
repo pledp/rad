@@ -7,7 +7,7 @@ use crate::ul::{
         abort::{AbortReason, AbortSource, AssociateAbortPdu}, rq_ac::{AssociateRqAcPdu, AssociateRqAcPduError}
     },
     event::{Command, CommandKind::{self, AssociateRejectPdu}, Event, EventKind},
-    service::{AbortIndicationPrimitive, AssociateConfirmationPrimitive, AssociateRequestIndicationPrimitive, PrimitiveError, ProviderAbortIndicationPrimitive, associate_response_into_reject_pdu},
+    service::{AbortIndicationPrimitive, AcceptedAssociateConfirmationPrimitive, RejectedAssociateConfirmationPrimitive, AssociateRequestIndicationPrimitive, PrimitiveError, ProviderAbortIndicationPrimitive, associate_response_into_reject_pdu},
     table::TransitionTable,
 };
 
@@ -182,16 +182,19 @@ pub fn handle_event(
 
                 Command::AbortIndicationPrimitive(AbortIndicationPrimitive::from_pdu(pdu))
             }
-            CommandKind::AssociateConfirmationPrimitive => {
-                match event.take().unwrap() {
-                    Event::AssociateAcceptPdu(pdu) => {
-                        Command::AssociateConfirmationPrimitive(AssociateConfirmationPrimitive::from_ac_pdu(pdu)?)
-                    }
-                    Event::AssociateRejectPdu(rj) => {
-                        Command::AssociateConfirmationPrimitive(AssociateConfirmationPrimitive::from_rj_pdu(rj))
-                    }
-                    _ => panic!("unexpected event for AssociateConfirmation"),
-                }
+            CommandKind::AcceptedAssociateConfirmationPrimitive => {
+                let Event::AssociateAcceptPdu(pdu) = event.take().unwrap() else {
+                    panic!("unexpected event for AcceptedAssociateConfirmationPrimitive")
+                };
+
+                Command::AcceptedAssociateConfirmationPrimitive(AcceptedAssociateConfirmationPrimitive::from_ac_pdu(pdu)?)
+            }
+            CommandKind::RejectedAssociateConfirmationPrimitive => {
+                let Event::AssociateRejectPdu(rj) = event.take().unwrap() else {
+                    panic!("unexpected event for RejectedAssociateConfirmationPrimitive")
+                };
+
+                Command::RejectedAssociateConfirmationPrimitive(RejectedAssociateConfirmationPrimitive::from_rj_pdu(rj))
             }
 
             CommandKind::TransportConnectionRequest => {

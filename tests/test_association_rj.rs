@@ -5,8 +5,10 @@ use tracing::info;
 use tracing_subscriber::fmt;
 
 use eradic::ul::{
+    associate::rj::RejectSource,
     connection::{StateTransition, UpperLayerConnectionState},
     event::{Event, ServiceProviderToServiceUser, ServiceUserToServiceProvider},
+    service::associate_response_into_reject_pdu,
 };
 use eradic_ul_tokio::requestor_handle_connection;
 
@@ -14,13 +16,13 @@ use common::service_user::create_server_one_connection;
 use common::util::*;
 
 #[tokio::test]
-async fn test_association_requestor_sta1_to_sta6_ok() {
+async fn test_association_requestor_sta5_to_sta1_rejected() {
     fmt().with_max_level(tracing::Level::DEBUG).init();
 
-    let server = TcpListener::bind("127.0.0.1:11105").await.unwrap();
+    let server = TcpListener::bind("127.0.0.1:11106").await.unwrap();
     create_server_one_connection(server, |indication, tx| async move {
         if let ServiceProviderToServiceUser::AssociateIndicationPrimitive(ind) = indication {
-            let response = accept_all_response(ind);
+            let response = reject_response(ind);
 
             tx.send(ServiceUserToServiceProvider::AssociateResponsePrimitive(response))
                 .await
@@ -29,10 +31,11 @@ async fn test_association_requestor_sta1_to_sta6_ok() {
     })
     .await;
 
-    let stream = TcpStream::connect("127.0.0.1:11105").await.unwrap();
+    let stream = TcpStream::connect("127.0.0.1:11106").await.unwrap();
 
     let request = default_associate_request(&stream);
-    let accepted_response = accept_all_response(request.clone());
+    let rejected_response = reject_response(request.clone());
+    let reject_pdu = associate_response_into_reject_pdu(rejected_response, RejectSource::ServiceUser);
 
     let expected_event_and_state = vec![
         StateTransition {
@@ -53,9 +56,9 @@ async fn test_association_requestor_sta1_to_sta6_ok() {
             state: UpperLayerConnectionState::WaitingForAcRjPdu,
         },
         StateTransition {
-            event: Some(Event::AssociateAcceptPdu(accepted_response.try_into().unwrap())),
-            state: UpperLayerConnectionState::DataTransfer,
-        }
+            event: Some(Event::AssociateRejectPdu(reject_pdu)),
+            state: UpperLayerConnectionState::Idle,
+        },
     ];
 
     let socket_addr = stream.peer_addr().unwrap();
@@ -71,13 +74,6 @@ async fn test_association_requestor_sta1_to_sta6_ok() {
         }
         states
     });
-
-    let mut indications = vec![];
-
-    while let Some(ind) = handle.scp_to_scu_rx.recv().await {
-        indications.push(ind);
-        handle.task.abort();
-    }
 
     let observed_transistions = state_task.await.unwrap();
 

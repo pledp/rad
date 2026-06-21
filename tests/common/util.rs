@@ -57,3 +57,17 @@ pub fn accept_all_response(indication: AssociateIndication) -> AssociateResponse
         result: AssociationResult::Accepted,
     }
 }
+
+/// Builds an [AssociateResponsePrimitive] that rejects the association on behalf of the
+/// service user, e.g. because the calling AE title is not recognized.
+pub fn reject_response(indication: AssociateIndication) -> AssociateResponsePrimitive {
+    AssociateResponsePrimitive {
+        context_name: indication.context_name,
+        called_ae: indication.called_ae,
+        calling_ae: indication.calling_ae,
+        user_information: indication.user_information,
+        presentation_context_result: vec![],
+        diagnostic: ServiceUserReason::CallingAeNotRecognized,
+        result: AssociationResult::RejectedPermanent,
+    }
+}

@@ -348,33 +348,15 @@ impl AssociateResponsePrimitive {
 }
 
 #[derive(Debug, PartialEq)]
-pub struct AssociateConfirmationPrimitive {
+pub struct AcceptedAssociateConfirmationPrimitive {
     pub context_name: String,
     pub called_ae: String,
     pub calling_ae: String,
-    pub diagnostic: Option<ServiceUserReason>,
-    pub result: AssociationResult,
     pub user_information: Vec<UserInformation>,
     pub presentation_context_result: Vec<PresentationContextDefinitionResult>,
 }
 
-impl AssociateConfirmationPrimitive {
-    pub fn from_rj_pdu(pdu: AssociateRjPdu) -> Self {
-        let diagnostic = match pdu.reason {
-            RejectReason::ServiceUser(r) => Some(r),
-            _ => None,
-        };
-        Self {
-            context_name: String::new(),
-            called_ae: String::new(),
-            calling_ae: String::new(),
-            diagnostic,
-            result: pdu.result,
-            user_information: vec![],
-            presentation_context_result: vec![],
-        }
-    }
-
+impl AcceptedAssociateConfirmationPrimitive {
     pub fn from_ac_pdu(
         pdu: AssociateRqAcPdu,
     ) -> Result<Self, PrimitiveError> {
@@ -395,11 +377,28 @@ impl AssociateConfirmationPrimitive {
             context_name: pdu.context_name().to_string(),
             called_ae: pdu.called_ae().to_string(),
             calling_ae: pdu.calling_ae().to_string(),
-            diagnostic: None,
-            result: AssociationResult::Accepted,
             user_information,
             presentation_context_result,
         })
+    }
+}
+
+#[derive(Debug, PartialEq)]
+pub struct RejectedAssociateConfirmationPrimitive {
+    pub diagnostic: Option<ServiceUserReason>,
+    pub result: AssociationResult,
+}
+
+impl RejectedAssociateConfirmationPrimitive {
+    pub fn from_rj_pdu(pdu: AssociateRjPdu) -> Self {
+        let diagnostic = match pdu.reason {
+            RejectReason::ServiceUser(r) => Some(r),
+            _ => None,
+        };
+        Self {
+            diagnostic,
+            result: pdu.result,
+        }
     }
 }
 

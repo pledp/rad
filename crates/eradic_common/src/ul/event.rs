@@ -6,7 +6,7 @@ use thiserror::Error;
 
 use crate::{
     DeserializedPdu, ul::{associate::{rq_ac::AssociateRqAcPdu, abort::AssociateAbortPdu, rj::AssociateRjPdu}, service::{
-        AbortIndicationPrimitive, AssociateConfirmationPrimitive, AssociateRequestIndicationPrimitive, AssociateResponsePrimitive, ProviderAbortIndicationPrimitive
+        AbortIndicationPrimitive, AcceptedAssociateConfirmationPrimitive, RejectedAssociateConfirmationPrimitive, AssociateRequestIndicationPrimitive, AssociateResponsePrimitive, ProviderAbortIndicationPrimitive
     }}
 };
 
@@ -60,7 +60,8 @@ pub enum Command {
     AssociateRejectPdu(AssociateRjPdu),
     AssociateRequestPdu(AssociateRqAcPdu),
 
-    AssociateConfirmationPrimitive(AssociateConfirmationPrimitive),
+    AcceptedAssociateConfirmationPrimitive(AcceptedAssociateConfirmationPrimitive),
+    RejectedAssociateConfirmationPrimitive(RejectedAssociateConfirmationPrimitive),
     TransportConnectionRequest(String),
 
     // Association Abort Related Actions/Commands
@@ -91,7 +92,8 @@ pub type Response = ServiceUserToServiceProvider;
 #[derive(IntoStaticStr)]
 pub enum ServiceProviderToServiceUser {
     AssociateIndicationPrimitive(AssociateRequestIndicationPrimitive),
-    AssociateConfirmationPrimitive(AssociateConfirmationPrimitive),
+    AcceptedAssociateConfirmationPrimitive(AcceptedAssociateConfirmationPrimitive),
+    RejectedAssociateConfirmationPrimitive(RejectedAssociateConfirmationPrimitive),
     AbortIndicationPrimitive(AbortIndicationPrimitive),
     ProviderAbortIndicationPrimitive(ProviderAbortIndicationPrimitive)
 }
