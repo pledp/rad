@@ -41,7 +41,7 @@ impl TryFrom<u8> for AbortSource {
     }
 }
 
-#[derive(Debug, PartialEq, Clone, Copy)]
+#[derive(Debug, PartialEq, Clone, Copy, serde::Deserialize)]
 #[repr(u8)]
 pub enum AbortReason {
     NoReason = 0,

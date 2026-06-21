@@ -51,17 +51,6 @@ pub struct StateTransition {
     pub state: UpperLayerConnectionState,
 }
 
-fn abort_reason_from_event(event: &Event) -> AbortReason {
-    match event {
-        Event::UnrecognizedPdu => AbortReason::UnrecognizedPdu,
-        Event::UnexpectedPdu => AbortReason::UnexpectedPdu,
-        Event::UnrecognizedPduParameter => AbortReason::UnrecognizedPduParameter,
-        Event::UnexpectedPduParameter => AbortReason::UnexpectedPduParameter,
-        Event::InvalidPduParameter => AbortReason::InvalidPduParameter,
-        _ => AbortReason::NoReason,
-    }
-}
-
 /// DICOM upper layer connection. Transitions are defined in `transitions.ron`.
 ///
 /// See [DICOM standard part 8](https://dicom.nema.org/medical/dicom/current/output/html/part08).
@@ -105,9 +94,9 @@ pub fn handle_event(
 
     // Clone to release the borrow on conn.table before mutating conn.state.
     let commands = entry.commands.clone();
+    let abort_reason = entry.reason;
     conn.state = entry.to;
 
-    let abort_reason = abort_reason_from_event(&event);
     let mut out = Vec::new();
 
     match &event {

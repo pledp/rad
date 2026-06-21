@@ -70,6 +70,10 @@ async fn test_association_requestor_sta1_to_sta6_ok() {
         states
     });
 
+    while let Some(ind) = handle.scp_to_scu_rx.recv().await {
+        handle.task.abort();
+    }
+
     let observed_transistions = state_task.await.unwrap();
 
     assert_eq!(observed_transistions, expected_event_and_state);

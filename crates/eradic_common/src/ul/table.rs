@@ -3,6 +3,7 @@ use std::collections::HashMap;
 use ron::de::SpannedError;
 use serde::Deserialize;
 
+use crate::ul::associate::abort::AbortReason;
 use crate::ul::connection::UpperLayerConnectionState;
 use crate::ul::event::{CommandKind, EventKind};
 
@@ -15,6 +16,12 @@ pub struct TransitionTable {
 pub struct TransitionEntry {
     pub to: UpperLayerConnectionState,
     pub commands: Vec<CommandKind>,
+    #[serde(default = "default_abort_reason")]
+    pub reason: AbortReason,
+}
+
+fn default_abort_reason() -> AbortReason {
+    AbortReason::NoReason
 }
 
 impl TransitionTable {
